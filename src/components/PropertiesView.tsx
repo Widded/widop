@@ -8,6 +8,7 @@ interface PropertiesViewProps {
   players: Player[];
   currentPlayer: Player;
   onSelectProperty: (property: Property) => void;
+  onQuickBuy?: (propertyId: string) => Promise<void>;
   onBack: () => void;
 }
 
@@ -16,6 +17,7 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
   players,
   currentPlayer,
   onSelectProperty,
+  onQuickBuy,
   onBack,
 }) => {
   const [filter, setFilter] = useState<'all' | 'mine' | 'for_sale' | 'mortgaged'>('all');
@@ -161,6 +163,26 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {!owner && onQuickBuy && (
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          style={{
+                            padding: '4px 10px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            minHeight: '28px',
+                            whiteSpace: 'nowrap',
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onQuickBuy(p.id);
+                          }}
+                          disabled={currentPlayer.balance < p.price}
+                        >
+                          Satın Al ({formatMoney(p.price)})
+                        </button>
+                      )}
                       {p.is_mortgaged && (
                         <span className="badge badge-rose" title="İpotekli">
                           <ShieldAlert size={12} />

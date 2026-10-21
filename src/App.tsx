@@ -90,7 +90,16 @@ export const App: React.FC = () => {
   const [showDebtModal, setShowDebtModal] = useState<boolean>(false);
   const [selectedPropertyForModal, setSelectedPropertyForModal] = useState<Property | null>(null);
   const [selectedPlayerForDetail, setSelectedPlayerForDetail] = useState<Player | null>(null);
+  const [transferTargetPlayerId, setTransferTargetPlayerId] = useState<string | undefined>(undefined);
   const [isManualRefreshing, setIsManualRefreshing] = useState<boolean>(false);
+  const [toast, setToast] = useState<{ message: string; type?: 'success' | 'info' | 'error' } | null>(null);
+
+  const showToast = useCallback((message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast((prev) => (prev?.message === message ? null : prev));
+    }, 2800);
+  }, []);
 
   // Refresh Room Data
   const refreshRoomData = useCallback(async () => {
@@ -114,7 +123,27 @@ export const App: React.FC = () => {
   const handleManualRefresh = async () => {
     setIsManualRefreshing(true);
     await refreshRoomData();
+    showToast('Veriler güncellendi! 🔄');
     setTimeout(() => setIsManualRefreshing(false), 600);
+  };
+
+  // 1-Tap Hızlı Başlangıç Parası (+200 ₺)
+  const handleQuickPassGo = async () => {
+    if (!room || !session || !currentPlayer) return;
+    try {
+      await GameService.bankTransaction(
+        room.id,
+        session.sessionToken,
+        currentPlayer.id,
+        200,
+        'bank_to_player',
+        'Başlangıç Çizgisi Geçişi (+200 ₺)'
+      );
+      showToast('+200 ₺ Başlangıç Parası Alındı! ⚡');
+      await refreshRoomData();
+    } catch (err: any) {
+      showToast(err.message || 'İşlem başarısız', 'error');
+    }
   };
 
   // Initial load, Realtime subscription, and active Polling Heartbeat
@@ -250,6 +279,16 @@ export const App: React.FC = () => {
         players={players}
         currentPlayer={currentPlayer}
         onSelectProperty={(p) => setSelectedPropertyForModal(p)}
+        onQuickBuy={async (propId) => {
+          if (!room || !session) return;
+          try {
+            await GameService.buyPropertyFromBank(room.id, session.sessionToken, currentPlayer.id, propId);
+            showToast('Mülk satın alındı! 🏠');
+            await refreshRoomData();
+          } catch (e: any) {
+            showToast(e.message || 'Satın alma başarısız', 'error');
+          }
+        }}
         onBack={() => setView('home')}
       />
     );
@@ -399,22 +438,49 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            <div style={{ marginTop: '14px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>
-                Kullanılabilir Nakit Bakiye
-              </span>
-              <h1
-                className="num-font"
+            <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <span style={{ fontSize: '12px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>
+                  Kullanılabilir Nakit Bakiye
+                </span>
+                <h1
+                  className="num-font"
+                  style={{
+                    fontSize: '36px',
+                    fontWeight: 800,
+                    color: 'var(--emerald-primary)',
+                    letterSpacing: '-0.03em',
+                    marginTop: '2px',
+                  }}
+                >
+                  {formatMoney(currentPlayer.balance)}
+                </h1>
+              </div>
+
+              {/* ⚡ +200 ₺ Başlangıç Hızlı Butonu (Tek Dokunuşla Tahsil Et) */}
+              <button
+                type="button"
+                onClick={handleQuickPassGo}
+                className="btn"
                 style={{
-                  fontSize: '36px',
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: '#03140a',
                   fontWeight: 800,
-                  color: 'var(--emerald-primary)',
-                  letterSpacing: '-0.03em',
-                  marginTop: '2px',
+                  fontSize: '13px',
+                  padding: '8px 14px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  minHeight: '38px',
                 }}
+                title="Başlangıç çizgisinden her geçişte tek dokunuşla 200 ₺ al"
               >
-                {formatMoney(currentPlayer.balance)}
-              </h1>
+                ⚡ +200 ₺ Başlangıç
+              </button>
             </div>
 
             {/* Varlık & Borç İstatistikleri */}
@@ -458,7 +524,13 @@ export const App: React.FC = () => {
         <div>
           <h3 style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '10px' }}>Hızlı İşlemler</h3>
           <div className="quick-action-grid">
-            <div className="quick-action-tile" onClick={() => setShowTransferModal(true)}>
+            <div
+              className="quick-action-tile"
+              onClick={() => {
+                setTransferTargetPlayerId(undefined);
+                setShowTransferModal(true);
+              }}
+            >
               <div className="tile-icon">
                 <Send size={18} />
               </div>
@@ -516,13 +588,14 @@ export const App: React.FC = () => {
               const pHotels = pProps.reduce((sum, pr) => sum + pr.hotel_count, 0);
               const pDebts = debts.filter((d) => d.debtor_id === p.id && d.status === 'open');
               const isCurrent = p.id === currentPlayer?.id;
+              const uniqueColors = Array.from(new Set(pProps.map((pr) => pr.group_color)));
 
               return (
                 <div
                   key={p.id}
                   className="card card-interactive"
                   style={{
-                    padding: '14px',
+                    padding: '12px 14px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -542,8 +615,9 @@ export const App: React.FC = () => {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontWeight: 700,
+                        fontWeight: 800,
                         fontSize: '16px',
+                        flexShrink: 0,
                       }}
                     >
                       {p.name.charAt(0).toUpperCase()}
@@ -556,11 +630,29 @@ export const App: React.FC = () => {
                         {p.is_banker && <span className="badge badge-slate">Bankacı</span>}
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                        <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>{pProps.length} mülk</span>
+                      {/* Mülk Renk Noktaları ve Varlık Özeti */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', flexWrap: 'wrap' }}>
+                        {uniqueColors.length > 0 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', marginRight: '2px' }}>
+                            {uniqueColors.map((col, idx) => (
+                              <span
+                                key={idx}
+                                style={{
+                                  width: '8px',
+                                  height: '8px',
+                                  borderRadius: '50%',
+                                  backgroundColor: col,
+                                  display: 'inline-block',
+                                }}
+                              />
+                            ))}
+                          </div>
+                        )}
+
+                        <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{pProps.length} mülk</span>
                         {(pHouses > 0 || pHotels > 0) && (
-                          <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
-                            • {pHouses} Ev, {pHotels} Otel
+                          <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                            • {pHouses > 0 ? `${pHouses} Ev` : ''} {pHotels > 0 ? `${pHotels} Otel` : ''}
                           </span>
                         )}
                         {pDebts.length > 0 && (
@@ -573,13 +665,41 @@ export const App: React.FC = () => {
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <strong
-                      className="num-font"
-                      style={{ fontSize: '17px', color: 'var(--emerald-primary)' }}
-                    >
-                      {formatMoney(p.balance)}
-                    </strong>
-                    <ChevronRight size={18} color="var(--text-dim)" />
+                    <div style={{ textAlign: 'right' }}>
+                      <strong
+                        className="num-font"
+                        style={{ fontSize: '16px', color: 'var(--emerald-primary)', display: 'block' }}
+                      >
+                        {formatMoney(p.balance)}
+                      </strong>
+                    </div>
+
+                    {/* Başka oyuncu ise: 1-Tap Hızlı Gönder Butonu */}
+                    {!isCurrent && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{
+                          padding: '5px 10px',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          minHeight: '30px',
+                          color: 'var(--emerald-primary)',
+                          borderColor: 'rgba(16, 185, 129, 0.4)',
+                          gap: '4px',
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTransferTargetPlayerId(p.id);
+                          setShowTransferModal(true);
+                        }}
+                        title={`${p.name}'a Para Gönder`}
+                      >
+                        <Send size={11} /> Gönder
+                      </button>
+                    )}
+
+                    <ChevronRight size={16} color="var(--text-dim)" />
                   </div>
                 </div>
               );
@@ -593,9 +713,16 @@ export const App: React.FC = () => {
         <TransferModal
           players={players}
           currentPlayer={currentPlayer}
-          onClose={() => setShowTransferModal(false)}
+          initialToPlayerId={transferTargetPlayerId}
+          onClose={() => {
+            setShowTransferModal(false);
+            setTransferTargetPlayerId(undefined);
+          }}
           onTransfer={async (fromId, toId, amount, note) => {
+            if (!room || !session) return;
             await GameService.transferMoney(room.id, session.sessionToken, fromId, toId, amount, note);
+            const toP = players.find((p) => p.id === toId);
+            showToast(`${toP ? toP.name : 'Oyuncu'}'a ${formatMoney(amount)} gönderildi! 💸`);
             await refreshRoomData();
           }}
         />
@@ -608,7 +735,10 @@ export const App: React.FC = () => {
           currentPlayer={currentPlayer}
           onClose={() => setShowRentModal(false)}
           onPayRent={async (payerId, propId, finalAmount, note) => {
+            if (!room || !session) return;
             await GameService.payRent(room.id, session.sessionToken, payerId, propId, finalAmount, note);
+            const pr = properties.find((p) => p.id === propId);
+            showToast(`${pr ? pr.name : 'Mülk'} kirası (${formatMoney(finalAmount)}) ödendi! 🏠`);
             await refreshRoomData();
           }}
         />
@@ -620,7 +750,13 @@ export const App: React.FC = () => {
           currentPlayer={currentPlayer}
           onClose={() => setShowBankModal(false)}
           onBankTransaction={async (pId, amount, dir, desc) => {
+            if (!room || !session) return;
             await GameService.bankTransaction(room.id, session.sessionToken, pId, amount, dir, desc);
+            showToast(
+              dir === 'bank_to_player'
+                ? `Bankadan ${formatMoney(amount)} alındı! 💰`
+                : `Bankaya ${formatMoney(amount)} ödendi! 🏦`
+            );
             await refreshRoomData();
           }}
         />
@@ -633,11 +769,15 @@ export const App: React.FC = () => {
           currentPlayer={currentPlayer}
           onClose={() => setShowDebtModal(false)}
           onCreateDebt={async (credId, debId, amt, rsn) => {
+            if (!room || !session) return;
             await GameService.createDebt(room.id, session.sessionToken, credId, debId, amt, rsn);
+            showToast(`Borç kaydı oluşturuldu: ${formatMoney(amt)}`);
             await refreshRoomData();
           }}
           onPayDebt={async (debtId, payerId, payAmt, forgiveAmt) => {
+            if (!room || !session) return;
             await GameService.payDebt(room.id, session.sessionToken, debtId, payerId, payAmt, forgiveAmt);
+            showToast(`Borç ödendi: ${formatMoney(payAmt)}`);
             await refreshRoomData();
           }}
         />
@@ -651,34 +791,102 @@ export const App: React.FC = () => {
           currentPlayer={currentPlayer}
           onClose={() => setSelectedPropertyForModal(null)}
           onBuyFromBank={async (propId) => {
+            if (!room || !session) return;
             await GameService.buyPropertyFromBank(room.id, session.sessionToken, currentPlayer.id, propId);
+            showToast(`${selectedPropertyForModal.name} tapusu satın alındı! 🏠`);
             await refreshRoomData();
           }}
           onTradeProperty={async (sellerId, buyerId, propId, price) => {
+            if (!room || !session) return;
             await GameService.tradeProperty(room.id, session.sessionToken, sellerId, buyerId, propId, price);
+            showToast(`Tapu devri gerçekleşti! (${formatMoney(price)})`);
             await refreshRoomData();
           }}
           onBuildHouse={async (propId) => {
+            if (!room || !session) return;
             await GameService.buildHouse(room.id, session.sessionToken, currentPlayer.id, propId);
+            showToast(`Ev/Otel inşa edildi! 🏗️`);
             await refreshRoomData();
           }}
           onToggleMortgage={async (propId) => {
+            if (!room || !session) return;
             await GameService.toggleMortgage(room.id, session.sessionToken, currentPlayer.id, propId);
+            showToast(`İpotek durumu güncellendi.`);
             await refreshRoomData();
           }}
         />
       )}
 
-      {selectedPlayerForDetail && (
+      {selectedPlayerForDetail && currentPlayer && (
         <PlayerDetailModal
           player={selectedPlayerForDetail}
+          currentPlayer={currentPlayer}
           properties={properties}
           debts={debts}
           transactions={transactions}
           players={players}
           onClose={() => setSelectedPlayerForDetail(null)}
           onSelectProperty={(p) => setSelectedPropertyForModal(p)}
+          onQuickSendMoney={async (toPlayerId, amount) => {
+            if (!room || !session) return;
+            await GameService.transferMoney(
+              room.id,
+              session.sessionToken,
+              currentPlayer.id,
+              toPlayerId,
+              amount,
+              'Hızlı Transfer'
+            );
+            showToast(`${selectedPlayerForDetail.name}'a ${formatMoney(amount)} gönderildi! 💸`);
+            await refreshRoomData();
+          }}
+          onQuickPayRent={async (propId, amount) => {
+            if (!room || !session) return;
+            await GameService.payRent(
+              room.id,
+              session.sessionToken,
+              currentPlayer.id,
+              propId,
+              amount,
+              'Hızlı Kira'
+            );
+            const pr = properties.find((p) => p.id === propId);
+            showToast(`${pr ? pr.name : 'Mülk'} kirası (${formatMoney(amount)}) ödendi! 🏠`);
+            await refreshRoomData();
+          }}
         />
+      )}
+
+      {/* Toast Bildirim Bannerı */}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 9999,
+            backgroundColor:
+              toast.type === 'error'
+                ? 'var(--rose-primary)'
+                : toast.type === 'info'
+                ? 'var(--blue-primary)'
+                : 'var(--emerald-primary)',
+            color: toast.type === 'error' ? '#fff' : '#03140a',
+            padding: '10px 20px',
+            borderRadius: '999px',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+            fontSize: '13px',
+            fontWeight: 800,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            animation: 'fadeIn 0.2s ease-out',
+            pointerEvents: 'none',
+          }}
+        >
+          {toast.message}
+        </div>
       )}
     </div>
   );

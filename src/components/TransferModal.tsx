@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Player } from '../types';
 import { formatMoney } from '../utils/formatters';
-import { ArrowRight, CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { Send, AlertCircle, X, User } from 'lucide-react';
 
 interface TransferModalProps {
   players: Player[];
   currentPlayer: Player;
+  initialToPlayerId?: string;
   onClose: () => void;
   onTransfer: (fromPlayerId: string, toPlayerId: string, amount: number, note?: string) => Promise<void>;
 }
@@ -13,34 +14,34 @@ interface TransferModalProps {
 export const TransferModal: React.FC<TransferModalProps> = ({
   players,
   currentPlayer,
+  initialToPlayerId,
   onClose,
   onTransfer,
 }) => {
-  const [fromPlayerId, setFromPlayerId] = useState<string>(currentPlayer.id);
-  const [toPlayerId, setToPlayerId] = useState<string>('');
-  const [amount, setAmount] = useState<string>('');
+  const otherPlayers = players.filter((p) => p.id !== currentPlayer.id);
+  const [toPlayerId, setToPlayerId] = useState<string>(() => {
+    if (initialToPlayerId && otherPlayers.some((p) => p.id === initialToPlayerId)) {
+      return initialToPlayerId;
+    }
+    return otherPlayers[0]?.id || '';
+  });
+  const [amount, setAmount] = useState<string>('100');
   const [note, setNote] = useState<string>('');
-  const [step, setStep] = useState<'input' | 'confirm'>('input');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const sender = players.find((p) => p.id === fromPlayerId);
   const receiver = players.find((p) => p.id === toPlayerId);
   const numAmount = parseInt(amount, 10) || 0;
 
   const quickAmounts = [50, 100, 200, 500];
 
-  const handleNext = () => {
+  const handleSend = async () => {
     setError(null);
-    if (!fromPlayerId) {
-      setError('Lütfen para gönderen oyuncuyu seçin');
-      return;
-    }
     if (!toPlayerId) {
-      setError('Lütfen alıcı oyuncuyu seçin');
+      setError('Lütfen parayı alacak oyuncuyu seçin');
       return;
     }
-    if (fromPlayerId === toPlayerId) {
+    if (currentPlayer.id === toPlayerId) {
       setError('Kendinize para gönderemezsiniz');
       return;
     }
@@ -48,22 +49,17 @@ export const TransferModal: React.FC<TransferModalProps> = ({
       setError('Lütfen 0 ₺ den büyük geçerli bir tutar girin');
       return;
     }
-    if (sender && sender.balance < numAmount) {
-      setError(`Yetersiz bakiye! Gönderenin bakiyesi: ${formatMoney(sender.balance)}`);
+    if (currentPlayer.balance < numAmount) {
+      setError(`Yetersiz bakiye! Mevcut bakiyeniz: ${formatMoney(currentPlayer.balance)}`);
       return;
     }
-    setStep('confirm');
-  };
 
-  const handleConfirm = async () => {
     setLoading(true);
-    setError(null);
     try {
-      await onTransfer(fromPlayerId, toPlayerId, numAmount, note.trim() || undefined);
+      await onTransfer(currentPlayer.id, toPlayerId, numAmount, note.trim() || undefined);
       onClose();
     } catch (err: any) {
       setError(err.message || 'Transfer sırasında bir hata oluştu');
-      setStep('input');
     } finally {
       setLoading(false);
     }
@@ -74,9 +70,9 @@ export const TransferModal: React.FC<TransferModalProps> = ({
       <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <h3 style={{ fontSize: '18px' }}>Para Transferi</h3>
+            <h3 style={{ fontSize: '18px' }}>Hızlı Para Gönder</h3>
             <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              {step === 'input' ? 'Transfer detaylarını girin' : 'Transferi onaylayın'}
+              Bakiyeniz: <strong style={{ color: 'var(--emerald-primary)' }}>{formatMoney(currentPlayer.balance)}</strong>
             </p>
           </div>
           <button className="btn-icon" onClick={onClose}>
@@ -84,216 +80,164 @@ export const TransferModal: React.FC<TransferModalProps> = ({
           </button>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {error && (
             <div
               style={{
                 background: 'rgba(244, 63, 94, 0.12)',
                 border: '1px solid rgba(244, 63, 94, 0.3)',
-                padding: '12px 14px',
+                padding: '10px 14px',
                 borderRadius: 'var(--radius-md)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '10px',
+                gap: '8px',
                 color: 'var(--rose-primary)',
                 fontSize: '13px',
               }}
             >
-              <AlertCircle size={18} style={{ flexShrink: 0 }} />
+              <AlertCircle size={16} style={{ flexShrink: 0 }} />
               <span>{error}</span>
             </div>
           )}
 
-          {step === 'input' ? (
-            <>
-              {/* Gönderen Oyuncu */}
-              <div>
-                <label className="input-label">Gönderen Oyuncu</label>
-                <select
-                  className="input-field select-field"
-                  value={fromPlayerId}
-                  onChange={(e) => setFromPlayerId(e.target.value)}
-                >
-                  {players.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} {p.id === currentPlayer.id ? '(Siz)' : ''} — Bakiye: {formatMoney(p.balance)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Alıcı Oyuncu */}
-              <div>
-                <label className="input-label">Alıcı Oyuncu</label>
-                <select
-                  className="input-field select-field"
-                  value={toPlayerId}
-                  onChange={(e) => setToPlayerId(e.target.value)}
-                >
-                  <option value="">Oyuncu Seçin...</option>
-                  {players
-                    .filter((p) => p.id !== fromPlayerId)
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} — Bakiye: {formatMoney(p.balance)}
-                      </option>
-                    ))}
-                </select>
-              </div>
-
-              {/* Tutar */}
-              <div>
-                <label className="input-label">Transfer Tutarı (₺)</label>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="0"
-                  className="input-field num-font"
-                  style={{ fontSize: '20px', fontWeight: 700 }}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                />
-                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                  {quickAmounts.map((q) => (
+          {/* 1. Alıcı Oyuncu Seçimi (Büyük Dokunmatik Kartlar) */}
+          <div>
+            <label className="input-label">Alıcıyı Seçin</label>
+            {otherPlayers.length === 0 ? (
+              <p style={{ fontSize: '13px', color: 'var(--text-dim)' }}>Odada başka oyuncu bulunmuyor.</p>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(otherPlayers.length, 3)}, 1fr)`, gap: '8px' }}>
+                {otherPlayers.map((p) => {
+                  const isSelected = p.id === toPlayerId;
+                  return (
                     <button
-                      key={q}
+                      key={p.id}
                       type="button"
-                      className="btn btn-secondary"
-                      style={{ flex: 1, padding: '8px', fontSize: '13px', minHeight: '38px' }}
-                      onClick={() => setAmount(q.toString())}
+                      onClick={() => setToPlayerId(p.id)}
+                      className="card"
+                      style={{
+                        padding: '10px 8px',
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        borderColor: isSelected ? 'var(--emerald-primary)' : 'var(--border-subtle)',
+                        background: isSelected ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-card)',
+                        boxShadow: isSelected ? '0 0 12px rgba(16, 185, 129, 0.25)' : 'none',
+                        transition: 'all 0.15s ease',
+                      }}
                     >
-                      +{q} ₺
+                      <div
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '50%',
+                          background: isSelected ? 'var(--emerald-primary)' : 'rgba(255, 255, 255, 0.08)',
+                          color: isSelected ? '#03140a' : 'var(--text-main)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          fontSize: '14px',
+                          margin: '0 auto 6px',
+                        }}
+                      >
+                        {p.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {p.name}
+                      </div>
+                      <div className="num-font" style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                        {formatMoney(p.balance)}
+                      </div>
                     </button>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
+            )}
+          </div>
 
-              {/* Açıklama */}
-              <div>
-                <label className="input-label">Açıklama (İsteğe bağlı)</label>
-                <input
-                  type="text"
-                  placeholder="Örn: Mülk takası, yardım..."
-                  className="input-field"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                />
-              </div>
-            </>
-          ) : (
-            /* Onay Ekranı */
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div
+          {/* 2. Tutar ve Hızlı Miktar Butonları */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <label className="input-label" style={{ marginBottom: 0 }}>Gönderilecek Tutar (₺)</label>
+              <button
+                type="button"
                 style={{
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-lg)',
-                  padding: '20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-dim)',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
                 }}
+                onClick={() => setAmount(currentPlayer.balance.toString())}
               >
-                <div style={{ textAlign: 'center', flex: 1 }}>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Gönderen</p>
-                  <p style={{ fontWeight: 700, fontSize: '16px', marginTop: '4px' }}>{sender?.name}</p>
-                  <p style={{ fontSize: '12px', color: 'var(--rose-primary)', marginTop: '2px' }}>
-                    -{formatMoney(numAmount)}
-                  </p>
-                </div>
-
-                <div
-                  style={{
-                    width: '36px',
-                    height: '36px',
-                    borderRadius: '50%',
-                    background: 'rgba(16, 185, 129, 0.1)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--emerald-primary)',
-                  }}
-                >
-                  <ArrowRight size={20} />
-                </div>
-
-                <div style={{ textAlign: 'center', flex: 1 }}>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Alıcı</p>
-                  <p style={{ fontWeight: 700, fontSize: '16px', marginTop: '4px' }}>{receiver?.name}</p>
-                  <p style={{ fontSize: '12px', color: 'var(--emerald-primary)', marginTop: '2px' }}>
-                    +{formatMoney(numAmount)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Tutar Özeti */}
-              <div
-                style={{
-                  background: 'rgba(16, 185, 129, 0.08)',
-                  border: '1px solid rgba(16, 185, 129, 0.25)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '16px',
-                  textAlign: 'center',
-                }}
-              >
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Aktarılacak Tutar</p>
-                <h2 style={{ fontSize: '28px', color: 'var(--emerald-primary)', marginTop: '4px' }}>
-                  {formatMoney(numAmount)}
-                </h2>
-                {note && (
-                  <p style={{ fontSize: '13px', color: 'var(--text-main)', marginTop: '6px', fontStyle: 'italic' }}>
-                    "{note}"
-                  </p>
-                )}
-              </div>
-
-              {/* Yeni Bakiye Önizlemesi */}
-              {sender && (
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center' }}>
-                  Gönderenin kalan bakiyesi:{' '}
-                  <strong style={{ color: 'var(--text-main)' }}>
-                    {formatMoney(sender.balance - numAmount)}
-                  </strong>
-                </div>
-              )}
+                Tümünü Gönder ({formatMoney(currentPlayer.balance)})
+              </button>
             </div>
-          )}
+
+            <input
+              type="number"
+              inputMode="numeric"
+              placeholder="0"
+              className="input-field num-font"
+              style={{ fontSize: '24px', fontWeight: 800, textAlign: 'center', color: 'var(--emerald-primary)' }}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              autoFocus
+            />
+
+            {/* Hızlı Miktar Chip Butonları */}
+            <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+              {quickAmounts.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{
+                    flex: 1,
+                    padding: '8px 4px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    minHeight: '36px',
+                    borderColor: numAmount === q ? 'var(--emerald-primary)' : undefined,
+                    background: numAmount === q ? 'rgba(16, 185, 129, 0.12)' : undefined,
+                  }}
+                  onClick={() => setAmount(q.toString())}
+                >
+                  +{q} ₺
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 3. Açıklama (İsteğe bağlı) */}
+          <div>
+            <label className="input-label">Açıklama (İsteğe bağlı)</label>
+            <input
+              type="text"
+              placeholder="Örn: Mülk takası, borç ödeme..."
+              className="input-field"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </div>
         </div>
 
+        {/* 4. Tek Tıkla Gönder Butonu (0 Vakit Kaybı) */}
         <div className="modal-footer">
-          {step === 'confirm' ? (
-            <>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ flex: 1 }}
-                onClick={() => setStep('input')}
-                disabled={loading}
-              >
-                Geri Dön
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ flex: 2 }}
-                onClick={handleConfirm}
-                disabled={loading}
-              >
-                <CheckCircle2 size={18} />
-                {loading ? 'İşleniyor...' : 'Transferi Onayla'}
-              </button>
-            </>
-          ) : (
-            <>
-              <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>
-                İptal
-              </button>
-              <button type="button" className="btn btn-primary" style={{ flex: 2 }} onClick={handleNext}>
-                Devam Et
-                <ArrowRight size={18} />
-              </button>
-            </>
-          )}
+          <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose} disabled={loading}>
+            İptal
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ flex: 2, fontWeight: 800 }}
+            onClick={handleSend}
+            disabled={loading || !receiver || numAmount <= 0}
+          >
+            <Send size={16} />
+            {loading ? 'Gönderiliyor...' : receiver ? `${receiver.name}'a ${formatMoney(numAmount)} Gönder` : 'Alıcı Seçin'}
+          </button>
         </div>
       </div>
     </div>

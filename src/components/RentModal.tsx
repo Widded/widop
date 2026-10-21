@@ -2,12 +2,13 @@ import React, { useState, useMemo } from 'react';
 import { Player, Property } from '../types';
 import { formatMoney } from '../utils/formatters';
 import { calculateCurrentRent } from '../data/monopolyIstanbulData';
-import { CheckCircle2, AlertCircle, X, Home, ArrowRight, Dices } from 'lucide-react';
+import { AlertCircle, X, Home, Hotel, ShieldAlert, Dices, Receipt } from 'lucide-react';
 
 interface RentModalProps {
   properties: Property[];
   players: Player[];
   currentPlayer: Player;
+  initialPropertyId?: string;
   onClose: () => void;
   onPayRent: (payerId: string, propertyId: string, finalAmount: number, note?: string) => Promise<void>;
 }
@@ -16,21 +17,37 @@ export const RentModal: React.FC<RentModalProps> = ({
   properties,
   players,
   currentPlayer,
+  initialPropertyId,
   onClose,
   onPayRent,
 }) => {
   const [payerId, setPayerId] = useState<string>(currentPlayer.id);
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>(initialPropertyId || '');
+  const [selectedOwnerFilter, setSelectedOwnerFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [diceRoll, setDiceRoll] = useState<number>(7);
   const [customAmount, setCustomAmount] = useState<string>('');
-  const [step, setStep] = useState<'select' | 'confirm'>('select');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   // Filter properties that have an owner who is NOT the payer
   const eligibleProperties = useMemo(() => {
-    return properties.filter((p) => p.owner_id && p.owner_id !== payerId);
-  }, [properties, payerId]);
+    return properties.filter((p) => {
+      if (!p.owner_id || p.owner_id === payerId) return false;
+      if (selectedOwnerFilter !== 'all' && p.owner_id !== selectedOwnerFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return p.name.toLowerCase().includes(q) || p.group_name.toLowerCase().includes(q);
+      }
+      return true;
+    });
+  }, [properties, payerId, selectedOwnerFilter, searchQuery]);
+
+  // Owners list who own at least 1 property
+  const propertyOwners = useMemo(() => {
+    const ownerIds = new Set(properties.filter((p) => p.owner_id && p.owner_id !== payerId).map((p) => p.owner_id));
+    return players.filter((pl) => ownerIds.has(pl.id));
+  }, [properties, payerId, players]);
 
   const selectedProperty = useMemo(() => {
     return properties.find((p) => p.id === selectedPropertyId) || null;
@@ -53,10 +70,10 @@ export const RentModal: React.FC<RentModalProps> = ({
 
   const finalAmount = customAmount !== '' ? parseInt(customAmount, 10) || 0 : rentCalc.amount;
 
-  const handleNext = () => {
+  const handlePay = async () => {
     setError(null);
     if (!selectedProperty) {
-      setError('Lütfen üzerine gelinen mülkü seçin');
+      setError('Lütfen üzerine inilen mülkü seçin');
       return;
     }
     if (!propertyOwner) {
@@ -64,7 +81,7 @@ export const RentModal: React.FC<RentModalProps> = ({
       return;
     }
     if (selectedProperty.is_mortgaged) {
-      setError('Bu mülk ipoteklidir. Monopoly kurallarına göre ipotekli mülkten kira alınamaz.');
+      setError('Bu mülk ipoteklidir. İpotekli mülkten kira alınamaz.');
       return;
     }
     if (finalAmount < 0) {
@@ -72,27 +89,21 @@ export const RentModal: React.FC<RentModalProps> = ({
       return;
     }
     if (payer && payer.balance < finalAmount) {
-      setError(`Yetersiz bakiye! Kiracının nakit bakiyesi: ${formatMoney(payer.balance)}`);
+      setError(`Yetersiz bakiye! Mevcut bakiyeniz: ${formatMoney(payer.balance)}`);
       return;
     }
-    setStep('confirm');
-  };
 
-  const handleConfirm = async () => {
-    if (!selectedProperty) return;
     setLoading(true);
-    setError(null);
     try {
       const note =
         customAmount !== '' && parseInt(customAmount, 10) !== rentCalc.amount
-          ? `${selectedProperty.name} kiralandı (Standart: ${rentCalc.amount} ₺, Anlaşılan: ${finalAmount} ₺)`
-          : undefined;
+          ? `${selectedProperty.name} kirası (Anlaşılan: ${finalAmount} ₺)`
+          : `${selectedProperty.name} kira ödemesi`;
 
       await onPayRent(payerId, selectedProperty.id, finalAmount, note);
       onClose();
     } catch (err: any) {
       setError(err.message || 'Kira ödemesi sırasında hata oluştu');
-      setStep('select');
     } finally {
       setLoading(false);
     }
@@ -103,9 +114,9 @@ export const RentModal: React.FC<RentModalProps> = ({
       <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <h3 style={{ fontSize: '18px' }}>Kira Ödeme</h3>
+            <h3 style={{ fontSize: '18px' }}>Hızlı Kira Öde</h3>
             <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              {step === 'select' ? 'Mülk ve tutar detayları' : 'Kira ödemesini onaylayın'}
+              Bakiyeniz: <strong style={{ color: 'var(--emerald-primary)' }}>{formatMoney(payer?.balance || 0)}</strong>
             </p>
           </div>
           <button className="btn-icon" onClick={onClose}>
@@ -113,303 +124,240 @@ export const RentModal: React.FC<RentModalProps> = ({
           </button>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {error && (
             <div
               style={{
                 background: 'rgba(244, 63, 94, 0.12)',
                 border: '1px solid rgba(244, 63, 94, 0.3)',
-                padding: '12px 14px',
+                padding: '10px 14px',
                 borderRadius: 'var(--radius-md)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '10px',
+                gap: '8px',
                 color: 'var(--rose-primary)',
                 fontSize: '13px',
               }}
             >
-              <AlertCircle size={18} style={{ flexShrink: 0 }} />
+              <AlertCircle size={16} style={{ flexShrink: 0 }} />
               <span>{error}</span>
             </div>
           )}
 
-          {step === 'select' ? (
-            <>
-              {/* Kiracı */}
-              <div>
-                <label className="input-label">Kiracı (Ödeyen Oyuncu)</label>
-                <select
-                  className="input-field select-field"
-                  value={payerId}
-                  onChange={(e) => {
-                    setPayerId(e.target.value);
-                    setSelectedPropertyId('');
-                  }}
+          {/* 1. Mülk Sahibi Filtresi (Hızlı Seçim) */}
+          {propertyOwners.length > 0 && (
+            <div>
+              <label className="input-label">Kime Kira Ödüyorsunuz?</label>
+              <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px' }}>
+                <button
+                  type="button"
+                  className={`btn ${selectedOwnerFilter === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '6px 12px', fontSize: '12px', minHeight: '34px', whiteSpace: 'nowrap' }}
+                  onClick={() => setSelectedOwnerFilter('all')}
                 >
-                  {players.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} {p.id === currentPlayer.id ? '(Siz)' : ''} — Bakiye: {formatMoney(p.balance)}
-                    </option>
-                  ))}
-                </select>
+                  Tüm Mülkler
+                </button>
+                {propertyOwners.map((owner) => (
+                  <button
+                    key={owner.id}
+                    type="button"
+                    className={`btn ${selectedOwnerFilter === owner.id ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '6px 12px', fontSize: '12px', minHeight: '34px', whiteSpace: 'nowrap' }}
+                    onClick={() => setSelectedOwnerFilter(owner.id)}
+                  >
+                    👤 {owner.name}
+                  </button>
+                ))}
               </div>
+            </div>
+          )}
 
-              {/* Mülk Seçimi */}
-              <div>
-                <label className="input-label">Gidilen Mülk</label>
-                <select
-                  className="input-field select-field"
-                  value={selectedPropertyId}
-                  onChange={(e) => {
-                    setSelectedPropertyId(e.target.value);
-                    setCustomAmount('');
-                  }}
-                >
-                  <option value="">Mülk Seçin...</option>
-                  {eligibleProperties.map((p) => {
-                    const owner = players.find((pl) => pl.id === p.owner_id);
-                    return (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.group_name}) — Sahibi: {owner?.name}{' '}
-                        {p.is_mortgaged ? '[İPOTEKLİ]' : ''}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
+          {/* 2. Mülk Arama & Seçim Listesi */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <label className="input-label" style={{ marginBottom: 0 }}>Gidilen Mülk ({eligibleProperties.length})</label>
+              <input
+                type="text"
+                placeholder="Mülk adı ara..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '6px',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  color: '#fff',
+                  width: '130px',
+                }}
+              />
+            </div>
 
-              {selectedProperty && (
-                <div
-                  style={{
-                    background: 'var(--bg-card)',
-                    border: `1px solid ${selectedProperty.group_color}`,
-                    borderRadius: 'var(--radius-md)',
-                    padding: '14px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div
-                        style={{
-                          width: '14px',
-                          height: '14px',
-                          borderRadius: '4px',
-                          backgroundColor: selectedProperty.group_color,
-                        }}
-                      />
-                      <strong style={{ fontSize: '15px' }}>{selectedProperty.name}</strong>
-                    </div>
-                    <span className="badge badge-slate">Sahibi: {propertyOwner?.name}</span>
-                  </div>
+            {eligibleProperties.length === 0 ? (
+              <p style={{ fontSize: '13px', color: 'var(--text-dim)', padding: '12px', textAlign: 'center' }}>
+                Kira ödenebilecek mülk bulunamadı.
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  maxHeight: '180px',
+                  overflowY: 'auto',
+                  paddingRight: '4px',
+                }}
+              >
+                {eligibleProperties.map((p) => {
+                  const isSelected = p.id === selectedPropertyId;
+                  const owner = players.find((pl) => pl.id === p.owner_id);
+                  const rent = calculateCurrentRent(p, properties, diceRoll);
 
-                  {selectedProperty.is_mortgaged ? (
+                  return (
                     <div
+                      key={p.id}
+                      onClick={() => {
+                        setSelectedPropertyId(p.id);
+                        setCustomAmount('');
+                      }}
+                      className="card card-interactive"
                       style={{
-                        color: 'var(--amber-primary)',
-                        fontSize: '13px',
-                        background: 'rgba(245, 158, 11, 0.1)',
-                        padding: '8px 12px',
-                        borderRadius: 'var(--radius-sm)',
+                        padding: '10px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        borderLeft: `4px solid ${p.group_color}`,
+                        borderColor: isSelected ? 'var(--emerald-primary)' : 'var(--border-subtle)',
+                        background: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-card)',
                       }}
                     >
-                      ⚠️ Bu mülk ipotek altındadır. Kurallara göre kira tahsil edilemez.
+                      <div>
+                        <strong style={{ fontSize: '13px' }}>{p.name}</strong>
+                        <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                          Sahibi: <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{owner?.name}</span>
+                          {p.house_count > 0 && ` • ${p.house_count} Ev`}
+                          {p.hotel_count > 0 && ` • 1 Otel`}
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: 'right' }}>
+                        <span className="num-font" style={{ fontWeight: 800, fontSize: '14px', color: 'var(--amber-primary)' }}>
+                          {formatMoney(rent.amount)}
+                        </span>
+                        <div style={{ fontSize: '10px', color: 'var(--text-dim)' }}>Standart Kira</div>
+                      </div>
                     </div>
-                  ) : (
-                    <>
-                      <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                        Hesaplanan Kural: <span style={{ color: 'var(--text-main)' }}>{rentCalc.description}</span>
-                      </div>
-
-                      {/* Kamu Kuruluşu için Zar Girişi */}
-                      {selectedProperty.type === 'utility' && (
-                        <div>
-                          <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <Dices size={16} /> Atılan Zar Toplamı
-                          </label>
-                          <input
-                            type="number"
-                            min="2"
-                            max="12"
-                            className="input-field num-font"
-                            value={diceRoll}
-                            onChange={(e) => setDiceRoll(parseInt(e.target.value, 10) || 7)}
-                          />
-                        </div>
-                      )}
-
-                      {/* Standart vs İndirimli Kira */}
-                      <div
-                        style={{
-                          background: 'rgba(15, 23, 42, 0.7)',
-                          padding: '12px',
-                          borderRadius: 'var(--radius-sm)',
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                          <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Standart Kira Bedeli:</span>
-                          <strong style={{ fontSize: '14px' }}>{formatMoney(rentCalc.amount)}</strong>
-                        </div>
-
-                        <div>
-                          <label className="input-label">
-                            Bu İşlemde Ödenecek Tutar (Mülk sahibi indirim yapabilir):
-                          </label>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            placeholder={rentCalc.amount.toString()}
-                            className="input-field num-font"
-                            style={{ fontWeight: 700, fontSize: '18px' }}
-                            value={customAmount}
-                            onChange={(e) => setCustomAmount(e.target.value)}
-                          />
-                          <p style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px' }}>
-                            * İndirim yalnızca bu sefere mahsustur. Mülkün standart kira tarifesi değişmez.
-                          </p>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </>
-          ) : (
-            /* Onay Adımı */
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div
-                style={{
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-lg)',
-                  padding: '18px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <div style={{ textAlign: 'center', flex: 1 }}>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Kiracı</p>
-                  <p style={{ fontWeight: 700, fontSize: '16px', marginTop: '4px' }}>{payer?.name}</p>
-                  <p style={{ fontSize: '12px', color: 'var(--rose-primary)', marginTop: '2px' }}>
-                    -{formatMoney(finalAmount)}
-                  </p>
-                </div>
-
-                <div
-                  style={{
-                    width: '36px',
-                    height: '36px',
-                    borderRadius: '50%',
-                    background: 'rgba(16, 185, 129, 0.1)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--emerald-primary)',
-                  }}
-                >
-                  <ArrowRight size={20} />
-                </div>
-
-                <div style={{ textAlign: 'center', flex: 1 }}>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Mülk Sahibi</p>
-                  <p style={{ fontWeight: 700, fontSize: '16px', marginTop: '4px' }}>{propertyOwner?.name}</p>
-                  <p style={{ fontSize: '12px', color: 'var(--emerald-primary)', marginTop: '2px' }}>
-                    +{formatMoney(finalAmount)}
-                  </p>
-                </div>
+                  );
+                })}
               </div>
+            )}
+          </div>
 
-              {/* Karşılaştırma Kutusu */}
-              <div
-                style={{
-                  background: 'rgba(16, 185, 129, 0.08)',
-                  border: '1px solid rgba(16, 185, 129, 0.25)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '16px',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Mülk:</span>
-                  <span style={{ fontWeight: 600 }}>{selectedProperty?.name}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Standart Kira:</span>
-                  <span style={{ textDecoration: customAmount !== '' ? 'line-through' : 'none' }}>
-                    {formatMoney(rentCalc.amount)}
+          {/* 3. Seçilen Mülk Detayı ve Özel Kira Ayarı */}
+          {selectedProperty && (
+            <div
+              style={{
+                background: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.25)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <span style={{ fontSize: '11px', color: 'var(--amber-primary)', fontWeight: 700 }}>
+                    {rentCalc.description || 'Kira Bedeli'}
                   </span>
+                  <h4 style={{ fontSize: '16px', fontWeight: 800 }}>{selectedProperty.name}</h4>
                 </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    paddingTop: '8px',
-                    borderTop: '1px solid rgba(16, 185, 129, 0.2)',
-                  }}
-                >
-                  <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--emerald-primary)' }}>
-                    Bu İşlemde Ödenecek:
-                  </span>
-                  <span style={{ fontSize: '20px', fontWeight: 800, color: 'var(--emerald-primary)' }}>
+                <div style={{ textAlign: 'right' }}>
+                  <span className="num-font" style={{ fontSize: '20px', fontWeight: 800, color: 'var(--emerald-primary)' }}>
                     {formatMoney(finalAmount)}
                   </span>
                 </div>
               </div>
 
-              {payer && (
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center' }}>
-                  Kiracının kalan nakit parası:{' '}
-                  <strong style={{ color: 'var(--text-main)' }}>
-                    {formatMoney(payer.balance - finalAmount)}
-                  </strong>
+              {/* Kamu Kuruluşu için Zar Girişi */}
+              {selectedProperty.type === 'utility' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+                  <Dices size={16} color="var(--amber-primary)" />
+                  <span style={{ fontSize: '12px' }}>Zar Toplamı:</span>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setDiceRoll(d)}
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '4px',
+                          border: 'none',
+                          background: diceRoll === d ? 'var(--amber-primary)' : 'rgba(255, 255, 255, 0.1)',
+                          color: diceRoll === d ? '#03140a' : '#fff',
+                          fontWeight: 700,
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
+
+              {/* Pazarlık / İndirimli Tutar Girişi (İsteğe bağlı) */}
+              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>Anlaşılan Tutar:</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  placeholder={rentCalc.amount.toString()}
+                  className="input-field num-font"
+                  style={{ padding: '4px 8px', fontSize: '14px', height: '32px' }}
+                  value={customAmount}
+                  onChange={(e) => setCustomAmount(e.target.value)}
+                />
+                {customAmount && (
+                  <button
+                    type="button"
+                    onClick={() => setCustomAmount('')}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: '11px', cursor: 'pointer' }}
+                  >
+                    Sıfırla
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
 
+        {/* 4. Tek Tıkla Öde Butonu */}
         <div className="modal-footer">
-          {step === 'confirm' ? (
-            <>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ flex: 1 }}
-                onClick={() => setStep('select')}
-                disabled={loading}
-              >
-                Geri Dön
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ flex: 2 }}
-                onClick={handleConfirm}
-                disabled={loading}
-              >
-                <CheckCircle2 size={18} />
-                {loading ? 'İşleniyor...' : 'Kirayı Öde'}
-              </button>
-            </>
-          ) : (
-            <>
-              <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>
-                İptal
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ flex: 2 }}
-                onClick={handleNext}
-                disabled={!selectedProperty || selectedProperty.is_mortgaged}
-              >
-                Devam Et
-                <ArrowRight size={18} />
-              </button>
-            </>
-          )}
+          <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose} disabled={loading}>
+            İptal
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{
+              flex: 2,
+              fontWeight: 800,
+              background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+              color: '#03140a',
+            }}
+            onClick={handlePay}
+            disabled={loading || !selectedProperty || !propertyOwner}
+          >
+            <Receipt size={16} />
+            {loading
+              ? 'Ödeniyor...'
+              : selectedProperty && propertyOwner
+              ? `${propertyOwner.name}'a ${formatMoney(finalAmount)} Kira Öde`
+              : 'Mülk Seçin'}
+          </button>
         </div>
       </div>
     </div>
