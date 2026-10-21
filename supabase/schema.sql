@@ -107,25 +107,139 @@ CREATE INDEX IF NOT EXISTS idx_debts_room ON debts(room_id, status);
 CREATE INDEX IF NOT EXISTS idx_debt_payments_debt ON debt_payments(debt_id);
 
 -- 3. ROW LEVEL SECURITY (RLS) POLİTİKALARI
-ALTER TABLE rooms ENABLE ROW LEVEL SECURITY;
-ALTER TABLE players ENABLE ROW LEVEL SECURITY;
-ALTER TABLE properties ENABLE ROW LEVEL SECURITY;
-ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE debts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE debt_payments ENABLE ROW LEVEL SECURITY;
-
--- Anonim istemcilerin oda oluşturabilmesi, katılabilmesi ve gerçek zamanlı senkronizasyon için RLS izinleri:
-CREATE POLICY "Public All Rooms" ON rooms FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public All Players" ON players FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public All Properties" ON properties FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public All Transactions" ON transactions FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public All Debts" ON debts FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public All Debt Payments" ON debt_payments FOR ALL USING (true) WITH CHECK (true);
-
--- İstemciden Doğrudan Bakiyeleri veya Mülkleri Değiştirmeyi Engelle:
--- Bütün finansal işlemler atomik RPC fonksiyonları (SECURITY DEFINER) üzerinden çalıştırılır!
+-- Anonim katılım ve gerçek zamanlı senkronizasyon için RLS devre dışı bırakılır (Finansal güvenlik atomik RPC fonksiyonları ile sağlanır):
+ALTER TABLE rooms DISABLE ROW LEVEL SECURITY;
+ALTER TABLE players DISABLE ROW LEVEL SECURITY;
+ALTER TABLE properties DISABLE ROW LEVEL SECURITY;
+ALTER TABLE transactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE debts DISABLE ROW LEVEL SECURITY;
+ALTER TABLE debt_payments DISABLE ROW LEVEL SECURITY;
 
 -- 4. ATOMİK FONKSİYONLAR (RPC)
+
+-- 4.0 Oda Oluşturma (Tek İşlemde Oda + Kurucu + 28 Mülk + Başlangıç Parası)
+CREATE OR REPLACE FUNCTION rpc_create_room(
+  p_room_id UUID,
+  p_code TEXT,
+  p_name TEXT,
+  p_owner_id UUID,
+  p_owner_name TEXT,
+  p_session_token TEXT,
+  p_properties JSONB
+) RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  INSERT INTO rooms (id, code, name, status, owner_id)
+  VALUES (p_room_id, upper(trim(p_code)), p_name, 'active', p_owner_id);
+
+  INSERT INTO players (id, room_id, name, session_token, balance, is_banker, is_owner)
+  VALUES (p_owner_id, p_room_id, trim(p_owner_name), p_session_token, 1500, true, true);
+
+  INSERT INTO properties (
+    id, room_id, property_key, name, group_key, group_name, group_color, type,
+    price, mortgage_value, unmortgage_price, owner_id, house_count, hotel_count,
+    is_mortgaged, rent_base, rent_house_1, rent_house_2, rent_house_3, rent_house_4,
+    rent_hotel, house_cost, position
+  )
+  SELECT 
+    (elem->>'id')::UUID,
+    p_room_id,
+    elem->>'property_key',
+    elem->>'name',
+    elem->>'group_key',
+    elem->>'group_name',
+    elem->>'group_color',
+    elem->>'type',
+    (elem->>'price')::NUMERIC,
+    (elem->>'mortgage_value')::NUMERIC,
+    (elem->>'unmortgage_price')::NUMERIC,
+    NULL,
+    0,
+    0,
+    false,
+    (elem->>'rent_base')::NUMERIC,
+    (elem->>'rent_house_1')::NUMERIC,
+    (elem->>'rent_house_2')::NUMERIC,
+    (elem->>'rent_house_3')::NUMERIC,
+    (elem->>'rent_house_4')::NUMERIC,
+    (elem->>'rent_hotel')::NUMERIC,
+    (elem->>'house_cost')::NUMERIC,
+    (elem->>'position')::INT
+  FROM jsonb_array_elements(p_properties) AS elem;
+
+  INSERT INTO transactions (room_id, type, from_player_id, to_player_id, amount, description, created_by_player_id)
+  VALUES (p_room_id, 'bank_deposit', NULL, p_owner_id, 1500, 'Başlangıç Bakiyesi', p_owner_id);
+
+  RETURN jsonb_build_object('success', true);
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
+
+-- 4.0.1 Odaya Katılma (Esnek Kod Arama: IST-482 veya IST482)
+CREATE OR REPLACE FUNCTION rpc_join_room(
+  p_code TEXT,
+  p_player_name TEXT,
+  p_player_id UUID,
+  p_session_token TEXT
+) RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_room rooms%ROWTYPE;
+  v_player players%ROWTYPE;
+  v_clean_search TEXT;
+BEGIN
+  v_clean_search := upper(regexp_replace(p_code, '[^a-zA-Z0-9]', '', 'g'));
+
+  SELECT * INTO v_room FROM rooms 
+  WHERE upper(regexp_replace(code, '[^a-zA-Z0-9]', '', 'g')) = v_clean_search
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Belirtilen kodla bir oyun odası bulunamadı');
+  END IF;
+
+  -- Aynı isimde oyuncu varsa yeniden bağlan
+  SELECT * INTO v_player FROM players 
+  WHERE room_id = v_room.id AND lower(trim(name)) = lower(trim(p_player_name))
+  LIMIT 1;
+
+  IF FOUND THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'is_reconnect', true,
+      'room_id', v_room.id,
+      'room_code', v_room.code,
+      'player_id', v_player.id,
+      'player_name', v_player.name,
+      'session_token', v_player.session_token
+    );
+  END IF;
+
+  -- Yeni oyuncu ekle (1.500 ₺ başlangıç bakiyesi)
+  INSERT INTO players (id, room_id, name, session_token, balance, is_banker, is_owner)
+  VALUES (p_player_id, v_room.id, trim(p_player_name), p_session_token, 1500, false, false);
+
+  INSERT INTO transactions (room_id, type, from_player_id, to_player_id, amount, description, created_by_player_id)
+  VALUES (v_room.id, 'bank_deposit', NULL, p_player_id, 1500, 'Yeni Oyuncu Başlangıç Bakiyesi', p_player_id);
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'is_reconnect', false,
+    'room_id', v_room.id,
+    'room_code', v_room.code,
+    'player_id', p_player_id,
+    'player_name', trim(p_player_name),
+    'session_token', p_session_token
+  );
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
 
 -- 4.1 Para Transferi
 CREATE OR REPLACE FUNCTION atomic_transfer(

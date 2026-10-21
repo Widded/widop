@@ -213,26 +213,39 @@ export class GameService {
     if (isSupabaseConfigured && supabase) {
       (async () => {
         try {
-          await supabase.from('rooms').insert({
-            id: roomId,
-            code: roomCode,
-            name: room.name,
-            status: 'active',
+          const { data: rpcRes, error: rpcErr } = await supabase.rpc('rpc_create_room', {
+            p_room_id: roomId,
+            p_code: roomCode,
+            p_name: room.name,
+            p_owner_id: playerId,
+            p_owner_name: trimmedName,
+            p_session_token: sessionToken,
+            p_properties: properties,
           });
-          await supabase.from('players').insert({
-            id: playerId,
-            room_id: roomId,
-            name: trimmedName,
-            session_token: sessionToken,
-            balance: 1500,
-            is_banker: true,
-            is_owner: true,
-          });
-          await supabase.from('rooms').update({ owner_id: playerId }).eq('id', roomId);
-          await supabase.from('properties').insert(properties);
-          await supabase.from('transactions').insert(initialTx);
+
+          if (rpcErr || (rpcRes && !rpcRes.success)) {
+            // Direct table insert fallback
+            await supabase.from('rooms').insert({
+              id: roomId,
+              code: roomCode,
+              name: room.name,
+              status: 'active',
+            });
+            await supabase.from('players').insert({
+              id: playerId,
+              room_id: roomId,
+              name: trimmedName,
+              session_token: sessionToken,
+              balance: 1500,
+              is_banker: true,
+              is_owner: true,
+            });
+            await supabase.from('rooms').update({ owner_id: playerId }).eq('id', roomId);
+            await supabase.from('properties').insert(properties);
+            await supabase.from('transactions').insert(initialTx);
+          }
         } catch (err: any) {
-          console.warn('Supabase createRoom background sync:', err.message);
+          console.warn('Supabase createRoom sync error:', err.message);
         }
       })();
     }
@@ -244,21 +257,32 @@ export class GameService {
    * Join an existing room with room code and player name
    */
   static async joinRoom(roomCode: string, playerName: string): Promise<UserSession> {
-    const cleanCode = roomCode.trim().toUpperCase();
+    const cleanRaw = roomCode.trim().toUpperCase();
+    const unhyphenated = cleanRaw.replace(/[^A-Z0-9]/g, '');
+    const hyphenated =
+      unhyphenated.length === 6 && unhyphenated.startsWith('IST')
+        ? `IST-${unhyphenated.slice(3)}`
+        : cleanRaw;
+    const cleanCode = hyphenated;
     const cleanName = playerName.trim();
 
-    if (!cleanCode) throw new Error('Lütfen oda kodunu girin');
+    if (!cleanRaw) throw new Error('Lütfen oda kodunu girin');
     if (!cleanName) throw new Error('Lütfen bir oyuncu adı girin');
 
     // 1. Check existing session for matching room/name to prevent duplicate players
     const currentSession = this.getSession();
     if (
       currentSession &&
-      currentSession.roomCode.toUpperCase() === cleanCode &&
+      (currentSession.roomCode.toUpperCase() === cleanRaw ||
+        currentSession.roomCode.toUpperCase() === hyphenated ||
+        currentSession.roomCode.toUpperCase() === unhyphenated) &&
       currentSession.playerName.toLowerCase() === cleanName.toLowerCase()
     ) {
       return currentSession;
     }
+
+    const newPlayerId = generateUUID();
+    const sessionToken = generateUUID();
 
     let roomId: string | null = null;
     let roomObj: Room | null = null;
@@ -266,38 +290,67 @@ export class GameService {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data: roomData, error: roomErr } = await supabase
+        // Try atomic RPC join first
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc('rpc_join_room', {
+          p_code: cleanRaw,
+          p_player_name: cleanName,
+          p_player_id: newPlayerId,
+          p_session_token: sessionToken,
+        });
+
+        if (!rpcErr && rpcRes && rpcRes.success) {
+          const session: UserSession = {
+            roomId: rpcRes.room_id,
+            roomCode: rpcRes.room_code,
+            playerId: rpcRes.player_id,
+            playerName: rpcRes.player_name,
+            sessionToken: rpcRes.session_token,
+          };
+          this.saveSession(session);
+          return session;
+        }
+
+        // Direct table query fallback with flexible code matching
+        const { data: roomList } = await supabase
           .from('rooms')
           .select('*')
-          .ilike('code', cleanCode)
-          .single();
+          .or(`code.ilike.${cleanRaw},code.ilike.${hyphenated},code.ilike.${unhyphenated}`)
+          .limit(1);
 
-        if (roomErr || !roomData) {
-          throw new Error('Belirtilen kodla bir oyun odası bulunamadı');
+        if (roomList && roomList.length > 0) {
+          const roomData = roomList[0];
+          roomId = roomData.id;
+          roomObj = roomData as Room;
+
+          const { data: pData } = await supabase
+            .from('players')
+            .select('*')
+            .eq('room_id', roomId);
+          existingPlayers = (pData as Player[]) || [];
         }
-        roomId = roomData.id;
-        roomObj = roomData as Room;
-
-        const { data: pData } = await supabase
-          .from('players')
-          .select('*')
-          .eq('room_id', roomId);
-        existingPlayers = (pData as Player[]) || [];
       } catch (err: any) {
-        console.warn('Supabase join query failed, checking local engine:', err.message);
+        console.warn('Supabase join query error:', err.message);
       }
     }
 
     if (!roomId) {
-      const mappedId = localStorage.getItem(`monopoly_code_${cleanCode}`);
-      if (!mappedId) {
-        throw new Error('Belirtilen kodla bir oyun odası bulunamadı');
+      const mappedId =
+        localStorage.getItem(`monopoly_code_${cleanRaw}`) ||
+        localStorage.getItem(`monopoly_code_${hyphenated}`) ||
+        localStorage.getItem(`monopoly_code_${unhyphenated}`);
+
+      if (mappedId) {
+        roomId = mappedId;
+        const state = getLocalRoomState(roomId);
+        if (state) {
+          roomObj = state.room;
+          existingPlayers = state.players;
+        }
       }
-      roomId = mappedId;
-      const state = getLocalRoomState(roomId);
-      if (!state) throw new Error('Oda verileri bulunamadı');
-      roomObj = state.room;
-      existingPlayers = state.players;
+    }
+
+    if (!roomId) {
+      throw new Error(`"${cleanRaw}" kodlu oyun odası bulunamadı. Lütfen oda kodunu doğru girdiğinizden emin olun.`);
     }
 
     // Check if player with identical name is already registered
@@ -319,8 +372,6 @@ export class GameService {
     }
 
     // New player joining: 1500 ₺ initial balance
-    const newPlayerId = generateUUID();
-    const sessionToken = generateUUID();
     const now = new Date().toISOString();
 
     const newPlayer: Player = {
