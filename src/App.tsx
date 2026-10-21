@@ -46,12 +46,37 @@ import {
 
 export const App: React.FC = () => {
   const [session, setSession] = useState<UserSession | null>(() => GameService.getSession());
-  const [room, setRoom] = useState<Room | null>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [properties, setProperties] = useState<Property[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [debts, setDebts] = useState<Debt[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [room, setRoom] = useState<Room | null>(() => {
+    const s = GameService.getSession();
+    if (!s) return null;
+    const st = GameService.getLocalRoomState(s.roomId);
+    return st ? st.room : null;
+  });
+  const [players, setPlayers] = useState<Player[]>(() => {
+    const s = GameService.getSession();
+    if (!s) return [];
+    const st = GameService.getLocalRoomState(s.roomId);
+    return st ? st.players : [];
+  });
+  const [properties, setProperties] = useState<Property[]>(() => {
+    const s = GameService.getSession();
+    if (!s) return [];
+    const st = GameService.getLocalRoomState(s.roomId);
+    return st ? st.properties : [];
+  });
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    const s = GameService.getSession();
+    if (!s) return [];
+    const st = GameService.getLocalRoomState(s.roomId);
+    return st ? st.transactions : [];
+  });
+  const [debts, setDebts] = useState<Debt[]>(() => {
+    const s = GameService.getSession();
+    if (!s) return [];
+    const st = GameService.getLocalRoomState(s.roomId);
+    return st ? st.debts : [];
+  });
+  const [loading, setLoading] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
 
   // Active View / Subpage
@@ -101,11 +126,20 @@ export const App: React.FC = () => {
     };
   }, [session, refreshRoomData]);
 
-  // Handle Session Entry
+  // Handle Session Entry (Instant 0ms transition)
   const handleJoinSuccess = (newSession: UserSession) => {
     setSession(newSession);
+    const st = GameService.getLocalRoomState(newSession.roomId);
+    if (st) {
+      setRoom(st.room);
+      setPlayers(st.players);
+      setProperties(st.properties);
+      setTransactions(st.transactions);
+      setDebts(st.debts);
+    }
     setView('home');
-    setLoading(true);
+    setLoading(false);
+    refreshRoomData();
   };
 
   // Handle Leave Room

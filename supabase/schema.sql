@@ -114,13 +114,13 @@ ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE debts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE debt_payments ENABLE ROW LEVEL SECURITY;
 
--- Okuma İzinleri (Odadaki herkes odanın verilerini görebilir)
-CREATE POLICY "Public Read Rooms" ON rooms FOR SELECT USING (true);
-CREATE POLICY "Public Read Players" ON players FOR SELECT USING (true);
-CREATE POLICY "Public Read Properties" ON properties FOR SELECT USING (true);
-CREATE POLICY "Public Read Transactions" ON transactions FOR SELECT USING (true);
-CREATE POLICY "Public Read Debts" ON debts FOR SELECT USING (true);
-CREATE POLICY "Public Read Debt Payments" ON debt_payments FOR SELECT USING (true);
+-- Anonim istemcilerin oda oluşturabilmesi, katılabilmesi ve gerçek zamanlı senkronizasyon için RLS izinleri:
+CREATE POLICY "Public All Rooms" ON rooms FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public All Players" ON players FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public All Properties" ON properties FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public All Transactions" ON transactions FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public All Debts" ON debts FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public All Debt Payments" ON debt_payments FOR ALL USING (true) WITH CHECK (true);
 
 -- İstemciden Doğrudan Bakiyeleri veya Mülkleri Değiştirmeyi Engelle:
 -- Bütün finansal işlemler atomik RPC fonksiyonları (SECURITY DEFINER) üzerinden çalıştırılır!

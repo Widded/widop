@@ -51,7 +51,7 @@ export function generateUUID(): string {
 // LOCAL STORAGE ENGINE (High fidelity fallback for instant local testing)
 // ============================================================================
 
-function getLocalRoomState(roomId: string): RoomState | null {
+export function getLocalRoomState(roomId: string): RoomState | null {
   try {
     const raw = localStorage.getItem(`${STORAGE_DATA_PREFIX}${roomId}`);
     return raw ? JSON.parse(raw) : null;
@@ -189,41 +189,7 @@ export class GameService {
       created_at: now,
     };
 
-    // If Supabase is configured, create in Supabase
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { error: roomErr } = await supabase.from('rooms').insert({
-          id: roomId,
-          code: roomCode,
-          name: room.name,
-          status: 'active',
-        });
-        if (roomErr) throw roomErr;
-
-        const { error: playerErr } = await supabase.from('players').insert({
-          id: playerId,
-          room_id: roomId,
-          name: trimmedName,
-          session_token: sessionToken,
-          balance: 1500,
-          is_banker: true,
-          is_owner: true,
-        });
-        if (playerErr) throw playerErr;
-
-        await supabase.from('rooms').update({ owner_id: playerId }).eq('id', roomId);
-
-        // Bulk insert properties
-        const { error: propErr } = await supabase.from('properties').insert(properties);
-        if (propErr) throw propErr;
-
-        await supabase.from('transactions').insert(initialTx);
-      } catch (err: any) {
-        console.warn('Supabase createRoom failed, falling back to local engine:', err.message);
-      }
-    }
-
-    // Always maintain local cache
+    // Always maintain local cache immediately for instant response (0ms)
     const roomState: RoomState = {
       room,
       players: [ownerPlayer],
@@ -242,6 +208,34 @@ export class GameService {
       sessionToken,
     };
     this.saveSession(session);
+
+    // If Supabase is configured, sync to Supabase in the background without blocking UI
+    if (isSupabaseConfigured && supabase) {
+      (async () => {
+        try {
+          await supabase.from('rooms').insert({
+            id: roomId,
+            code: roomCode,
+            name: room.name,
+            status: 'active',
+          });
+          await supabase.from('players').insert({
+            id: playerId,
+            room_id: roomId,
+            name: trimmedName,
+            session_token: sessionToken,
+            balance: 1500,
+            is_banker: true,
+            is_owner: true,
+          });
+          await supabase.from('rooms').update({ owner_id: playerId }).eq('id', roomId);
+          await supabase.from('properties').insert(properties);
+          await supabase.from('transactions').insert(initialTx);
+        } catch (err: any) {
+          console.warn('Supabase createRoom background sync:', err.message);
+        }
+      })();
+    }
 
     return { session, room };
   }
@@ -381,20 +375,20 @@ export class GameService {
     return session;
   }
 
+  static getLocalRoomState(roomId: string): RoomState | null {
+    return getLocalRoomState(roomId);
+  }
+
   /**
    * Fetch complete current state of the room
    */
   static async fetchRoomState(roomId: string): Promise<RoomState | null> {
+    const local = getLocalRoomState(roomId);
+
     if (isSupabaseConfigured && supabase) {
       try {
-        const [
-          { data: room },
-          { data: players },
-          { data: properties },
-          { data: transactions },
-          { data: debts },
-          { data: debtPayments },
-        ] = await Promise.all([
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500));
+        const fetchPromise = Promise.all([
           supabase.from('rooms').select('*').eq('id', roomId).single(),
           supabase.from('players').select('*').eq('room_id', roomId).order('created_at', { ascending: true }),
           supabase.from('properties').select('*').eq('room_id', roomId).order('position', { ascending: true }),
@@ -403,24 +397,36 @@ export class GameService {
           supabase.from('debt_payments').select('*').eq('room_id', roomId),
         ]);
 
-        if (room && players && properties) {
-          const state: RoomState = {
-            room: room as Room,
-            players: (players as Player[]) || [],
-            properties: (properties as Property[]) || [],
-            transactions: (transactions as Transaction[]) || [],
-            debts: (debts as Debt[]) || [],
-            debtPayments: (debtPayments as DebtPayment[]) || [],
-          };
-          saveLocalRoomState(state);
-          return state;
+        const result: any = await Promise.race([fetchPromise, timeoutPromise]);
+        if (result) {
+          const [
+            { data: room },
+            { data: players },
+            { data: properties },
+            { data: transactions },
+            { data: debts },
+            { data: debtPayments },
+          ] = result;
+
+          if (room && players && properties && properties.length > 0) {
+            const state: RoomState = {
+              room: room as Room,
+              players: (players as Player[]) || [],
+              properties: (properties as Property[]) || [],
+              transactions: (transactions as Transaction[]) || [],
+              debts: (debts as Debt[]) || [],
+              debtPayments: (debtPayments as DebtPayment[]) || [],
+            };
+            saveLocalRoomState(state);
+            return state;
+          }
         }
       } catch (err) {
         console.warn('Supabase fetch failed, using local cache:', err);
       }
     }
 
-    return getLocalRoomState(roomId);
+    return local;
   }
 
   /**
