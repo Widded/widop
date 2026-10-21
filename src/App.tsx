@@ -621,46 +621,7 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* 3. MÜLKLER & TAPULAR */}
-            <div
-              className="card card-interactive"
-              style={{
-                padding: '12px 14px',
-                background: 'linear-gradient(145deg, rgba(56, 189, 248, 0.12) 0%, rgba(56, 189, 248, 0.03) 100%)',
-                borderColor: 'rgba(56, 189, 248, 0.35)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-                cursor: 'pointer',
-              }}
-              onClick={() => setView('properties')}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div
-                  style={{
-                    width: '34px',
-                    height: '34px',
-                    borderRadius: '10px',
-                    background: 'rgba(56, 189, 248, 0.2)',
-                    color: 'var(--blue-primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Building size={18} />
-                </div>
-                <span className="badge badge-slate" style={{ fontSize: '10px', padding: '1px 6px' }}>
-                  {myProperties.length} Tapu
-                </span>
-              </div>
-              <div>
-                <strong style={{ fontSize: '14px', color: 'var(--text-main)', display: 'block' }}>Mülkler</strong>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Tapu al, ev inşa et</span>
-              </div>
-            </div>
-
-            {/* 4. BANKA İŞLEMİ (Bankacı ise Kasa & Banka, Oyuncu ise Bankaya Öde) */}
+            {/* 3. VERGİ ÖDE */}
             <div
               className="card card-interactive"
               style={{
@@ -692,21 +653,64 @@ export const App: React.FC = () => {
                   <Landmark size={18} />
                 </div>
                 <span className={`badge ${isBanker ? 'badge-emerald' : 'badge-slate'}`} style={{ fontSize: '10px', padding: '1px 6px' }}>
-                  {isBanker ? 'Kasa' : 'Ödeme'}
+                  {isBanker ? 'Kasa' : 'Banka'}
                 </span>
               </div>
               <div>
                 <strong style={{ fontSize: '14px', color: 'var(--text-main)', display: 'block' }}>
-                  {isBanker ? 'Banka & Kasa' : 'Bankaya Öde'}
+                  {isBanker ? 'Banka & Kasa' : 'Vergi Öde'}
                 </strong>
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {isBanker ? 'Maaş ver / tahsil et' : 'Vergi, ceza veya kodes'}
+                  {isBanker ? 'Maaş ver / tahsil et' : 'Gelir, ceza veya kodes'}
                 </span>
+              </div>
+            </div>
+
+            {/* 4. BORÇ VERME */}
+            <div
+              className="card card-interactive"
+              style={{
+                padding: '12px 14px',
+                background: 'linear-gradient(145deg, rgba(56, 189, 248, 0.12) 0%, rgba(56, 189, 248, 0.03) 100%)',
+                borderColor: 'rgba(56, 189, 248, 0.35)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                cursor: 'pointer',
+              }}
+              onClick={() => setShowDebtModal(true)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '10px',
+                    background: 'rgba(56, 189, 248, 0.2)',
+                    color: 'var(--blue-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <HandCoins size={18} />
+                </div>
+                {myDebtsOwed.length > 0 ? (
+                  <span className="badge badge-rose" style={{ fontSize: '9px', padding: '1px 5px' }}>
+                    {myDebtsOwed.length} Borç
+                  </span>
+                ) : (
+                  <span className="badge badge-slate" style={{ fontSize: '10px', padding: '1px 6px' }}>Borç</span>
+                )}
+              </div>
+              <div>
+                <strong style={{ fontSize: '14px', color: 'var(--text-main)', display: 'block' }}>Borç Verme</strong>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Arkadaşına borç aç/kapat</span>
               </div>
             </div>
           </div>
 
-          {/* İkincil Araçlar (Hafif ve Sade Pill Butonlar) */}
+          {/* İkincil İnceleme Araçları (Tapu Rehberi & Geçmiş) */}
           <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
             <button
               type="button"
@@ -714,21 +718,16 @@ export const App: React.FC = () => {
               style={{
                 flex: 1,
                 fontSize: '11px',
-                padding: '6px 10px',
-                minHeight: '32px',
+                padding: '7px 10px',
+                minHeight: '34px',
                 justifyContent: 'center',
                 gap: '6px',
-                color: 'var(--text-muted)',
+                color: 'var(--text-main)',
               }}
-              onClick={() => setShowDebtModal(true)}
+              onClick={() => setView('properties')}
             >
-              <HandCoins size={13} color="var(--blue-primary)" />
-              Borçlar
-              {myDebtsOwed.length > 0 && (
-                <span className="badge badge-rose" style={{ fontSize: '9px', padding: '0 5px' }}>
-                  {myDebtsOwed.length}
-                </span>
-              )}
+              <Building size={14} color="var(--blue-primary)" />
+              Tapuları İncele ({properties.length})
             </button>
 
             <button
@@ -737,15 +736,15 @@ export const App: React.FC = () => {
               style={{
                 flex: 1,
                 fontSize: '11px',
-                padding: '6px 10px',
-                minHeight: '32px',
+                padding: '7px 10px',
+                minHeight: '34px',
                 justifyContent: 'center',
                 gap: '6px',
                 color: 'var(--text-muted)',
               }}
               onClick={() => setView('history')}
             >
-              <History size={13} color="var(--text-dim)" />
+              <History size={14} color="var(--text-dim)" />
               İşlem Geçmişi
             </button>
           </div>
@@ -995,10 +994,12 @@ export const App: React.FC = () => {
           players={players}
           currentPlayer={currentPlayer}
           onClose={() => setSelectedPropertyForModal(null)}
-          onBuyFromBank={async (propId) => {
+          onBuyFromBank={async (propId, buyerId) => {
             if (!room || !session) return;
-            await GameService.buyPropertyFromBank(room.id, session.sessionToken, currentPlayer.id, propId);
-            showToast(`${selectedPropertyForModal.name} tapusu satın alındı! 🏠`);
+            const targetBuyerId = buyerId || currentPlayer.id;
+            await GameService.buyPropertyFromBank(room.id, session.sessionToken, targetBuyerId, propId);
+            const buyer = players.find((p) => p.id === targetBuyerId);
+            showToast(`${selectedPropertyForModal.name} tapusu ${buyer ? buyer.name : ''} adlı oyuncuya verildi! 🏠`);
             await refreshRoomData();
           }}
           onTradeProperty={async (sellerId, buyerId, propId, price) => {

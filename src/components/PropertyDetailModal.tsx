@@ -10,7 +10,7 @@ interface PropertyDetailModalProps {
   players: Player[];
   currentPlayer: Player;
   onClose: () => void;
-  onBuyFromBank: (propertyId: string) => Promise<void>;
+  onBuyFromBank: (propertyId: string, buyerPlayerId?: string) => Promise<void>;
   onTradeProperty: (sellerId: string, buyerId: string, propertyId: string, price: number) => Promise<void>;
   onBuildHouse: (propertyId: string) => Promise<void>;
   onToggleMortgage: (propertyId: string) => Promise<void>;
@@ -30,6 +30,9 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
   const [tradeMode, setTradeMode] = useState<boolean>(false);
   const [targetBuyerId, setTargetBuyerId] = useState<string>('');
   const [tradePrice, setTradePrice] = useState<string>(property.price.toString());
+  const [bankerSelectedBuyerId, setBankerSelectedBuyerId] = useState<string>(
+    players.find((p) => p.id !== currentPlayer.id)?.id || currentPlayer.id
+  );
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,14 +43,27 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
   const groupProps = allProperties.filter((p) => p.group_key === property.group_key);
   const buildingCheck = validateBuildingRule(property, groupProps);
 
-  const handleBuy = async () => {
+  const handleBankerSell = async () => {
+    if (!currentPlayer.is_banker) return;
+    const buyer = players.find((p) => p.id === bankerSelectedBuyerId);
+    if (!buyer) {
+      setError('Lütfen tapuyu alacak oyuncuyu seçin');
+      return;
+    }
+    if (buyer.balance < property.price) {
+      setError(
+        `${buyer.name} oyuncusunun bakiyesi yetersiz (${formatMoney(buyer.balance)})! Mülk bedeli: ${formatMoney(property.price)}`
+      );
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      await onBuyFromBank(property.id);
+      await onBuyFromBank(property.id, buyer.id);
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Satın alma başarısız oldu');
+      setError(err.message || 'Tapu verme işlemi başarısız oldu');
     } finally {
       setLoading(false);
     }
@@ -364,16 +380,65 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
         {/* Buton Aksiyonları */}
         <div className="modal-footer" style={{ flexDirection: 'column' }}>
           {isUnowned ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              style={{ width: '100%' }}
-              onClick={handleBuy}
-              disabled={loading || currentPlayer.balance < property.price}
-            >
-              <ShoppingCart size={18} />
-              Bankadan Satın Al ({formatMoney(property.price)})
-            </button>
+            currentPlayer.is_banker ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--emerald-primary)' }}>
+                    👑 Masa Bankacısı Tapu Satışı
+                  </span>
+                  <span style={{ fontSize: '13px', fontWeight: 800 }} className="num-font">
+                    {formatMoney(property.price)}
+                  </span>
+                </div>
+                <div>
+                  <label className="input-label" style={{ fontSize: '11px', marginBottom: '4px' }}>
+                    Tapuyu Satın Alacak Oyuncu:
+                  </label>
+                  <select
+                    className="input-field select-field"
+                    value={bankerSelectedBuyerId}
+                    onChange={(e) => setBankerSelectedBuyerId(e.target.value)}
+                    style={{ fontSize: '13px', padding: '8px 10px' }}
+                  >
+                    {players.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} {p.id === currentPlayer.id ? '(Siz - Bankacı)' : ''} — Bakiye: {formatMoney(p.balance)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{ width: '100%', fontWeight: 800 }}
+                  onClick={handleBankerSell}
+                  disabled={loading}
+                >
+                  <ShoppingCart size={16} />
+                  {loading
+                    ? 'İşleniyor...'
+                    : `${players.find((p) => p.id === bankerSelectedBuyerId)?.name || 'Oyuncuya'} Tapuyu Ver (${formatMoney(property.price)})`}
+                </button>
+              </div>
+            ) : (
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '12px 14px',
+                  background: 'rgba(245, 158, 11, 0.08)',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(245, 158, 11, 0.25)',
+                  width: '100%',
+                }}
+              >
+                <p style={{ color: 'var(--amber-primary)', fontWeight: 800, fontSize: '13px' }}>
+                  🏦 Bankada Satılık ({formatMoney(property.price)})
+                </p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '4px' }}>
+                  Monopoly kuralları gereği tapuları yalnızca Masa Bankacısı verir. Bu mülkü satın almak için Bankacıya bildirin.
+                </p>
+              </div>
+            )
           ) : isMine ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
               <div style={{ display: 'flex', gap: '8px' }}>

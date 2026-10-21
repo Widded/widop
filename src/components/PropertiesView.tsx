@@ -187,25 +187,33 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      {!owner && onQuickBuy && (
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          style={{
-                            padding: '4px 10px',
-                            fontSize: '11px',
-                            fontWeight: 800,
-                            minHeight: '28px',
-                            whiteSpace: 'nowrap',
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onQuickBuy(p.id);
-                          }}
-                          disabled={currentPlayer.balance < p.price}
-                        >
-                          Satın Al ({formatMoney(p.price)})
-                        </button>
+                      {!owner && (
+                        currentPlayer.is_banker ? (
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              minHeight: '28px',
+                              whiteSpace: 'nowrap',
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectProperty(p);
+                            }}
+                          >
+                            👑 Tapuyu Sat
+                          </button>
+                        ) : (
+                          <span
+                            className="badge badge-slate"
+                            style={{ fontSize: '10px', color: 'var(--amber-primary)', fontWeight: 700 }}
+                          >
+                            Satılık ({formatMoney(p.price)})
+                          </span>
+                        )
                       )}
                       {p.is_mortgaged && (
                         <span className="badge badge-rose" title="İpotekli">
