@@ -629,10 +629,19 @@ BEGIN
 END;
 $$;
 
--- Realtime Tablo Bildirimleri
+-- Realtime Tablo Bildirimleri (Canlı Yayın)
 DO $$
+DECLARE
+  tbl text;
 BEGIN
-  ALTER PUBLICATION supabase_realtime ADD TABLE rooms, players, properties, transactions, debts, debt_payments;
-EXCEPTION WHEN OTHERS THEN
-  NULL;
+  FOR tbl IN SELECT unnest(ARRAY['rooms', 'players', 'properties', 'transactions', 'debts', 'debt_payments'])
+  LOOP
+    BEGIN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I', tbl);
+    EXCEPTION 
+      WHEN duplicate_object THEN NULL;
+      WHEN OTHERS THEN NULL;
+    END;
+  END LOOP;
 END $$;
+
