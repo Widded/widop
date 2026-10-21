@@ -226,15 +226,23 @@ export const RoomEntryView: React.FC<RoomEntryViewProps> = ({ onJoinSuccess, sav
           ) : (
             <form onSubmit={handleJoin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label className="input-label">Oda Kodu</label>
+                <label className="input-label">Oda Kodu (6 Haneli)</label>
                 <input
                   type="text"
-                  placeholder="Örn: IST-482"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  placeholder="Örn: 582914"
                   className="input-field num-font"
-                  style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}
+                  style={{
+                    fontSize: '22px',
+                    fontWeight: 800,
+                    letterSpacing: '0.15em',
+                    textAlign: 'center',
+                  }}
                   autoFocus
                   value={roomCode}
-                  onChange={(e) => setRoomCode(e.target.value)}
+                  onChange={(e) => setRoomCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 />
               </div>
 

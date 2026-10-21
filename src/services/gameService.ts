@@ -53,15 +53,9 @@ interface RoomState {
   debtPayments: DebtPayment[];
 }
 
-// Generate human-friendly 6-character room codes (e.g. IST-492)
+// Generate only-digit 6-digit room codes (e.g. 582914)
 export function generateRoomCode(): string {
-  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-  const nums = '23456789';
-  let code = 'IST-';
-  for (let i = 0; i < 3; i++) {
-    code += nums.charAt(Math.floor(Math.random() * nums.length));
-  }
-  return code;
+  return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 export function generateUUID(): string {
@@ -286,22 +280,24 @@ export class GameService {
    */
   static async joinRoom(roomCode: string, playerName: string): Promise<UserSession> {
     const cleanRaw = roomCode.trim().toUpperCase();
+    const digitsOnly = cleanRaw.replace(/\D/g, '');
     const unhyphenated = cleanRaw.replace(/[^A-Z0-9]/g, '');
     const hyphenated =
       unhyphenated.length === 6 && unhyphenated.startsWith('IST')
         ? `IST-${unhyphenated.slice(3)}`
         : cleanRaw;
-    const cleanCode = hyphenated;
+    const cleanCode = digitsOnly || cleanRaw;
     const cleanName = playerName.trim();
 
-    if (!cleanRaw) throw new Error('Lütfen oda kodunu girin');
+    if (!cleanRaw && !digitsOnly) throw new Error('Lütfen oda kodunu girin');
     if (!cleanName) throw new Error('Lütfen bir oyuncu adı girin');
 
     // 1. Check existing session for matching room/name to prevent duplicate players
     const currentSession = this.getSession();
     if (
       currentSession &&
-      (currentSession.roomCode.toUpperCase() === cleanRaw ||
+      (currentSession.roomCode === cleanCode ||
+        currentSession.roomCode.toUpperCase() === cleanRaw ||
         currentSession.roomCode.toUpperCase() === hyphenated ||
         currentSession.roomCode.toUpperCase() === unhyphenated) &&
       currentSession.playerName.toLowerCase() === cleanName.toLowerCase()
@@ -320,7 +316,7 @@ export class GameService {
       try {
         // Try atomic RPC join first
         const { data: rpcRes, error: rpcErr } = await supabase.rpc('rpc_join_room', {
-          p_code: cleanRaw,
+          p_code: cleanCode,
           p_player_name: cleanName,
           p_player_id: newPlayerId,
           p_session_token: sessionToken,
@@ -339,11 +335,21 @@ export class GameService {
           return session;
         }
 
-        // Direct table query fallback with flexible code matching
+        // Direct table query fallback with flexible code matching (digits first, legacy IST- second)
+        const orConditions = [
+          digitsOnly ? `code.eq.${digitsOnly}` : null,
+          `code.eq.${cleanCode}`,
+          `code.ilike.${cleanRaw}`,
+          `code.ilike.${hyphenated}`,
+          `code.ilike.${unhyphenated}`,
+        ]
+          .filter(Boolean)
+          .join(',');
+
         const { data: roomList } = await supabase
           .from('rooms')
           .select('*')
-          .or(`code.ilike.${cleanRaw},code.ilike.${hyphenated},code.ilike.${unhyphenated}`)
+          .or(orConditions)
           .limit(1);
 
         if (roomList && roomList.length > 0) {
@@ -364,6 +370,8 @@ export class GameService {
 
     if (!roomId) {
       const mappedId =
+        (digitsOnly ? localStorage.getItem(`monopoly_code_${digitsOnly}`) : null) ||
+        localStorage.getItem(`monopoly_code_${cleanCode}`) ||
         localStorage.getItem(`monopoly_code_${cleanRaw}`) ||
         localStorage.getItem(`monopoly_code_${hyphenated}`) ||
         localStorage.getItem(`monopoly_code_${unhyphenated}`);
