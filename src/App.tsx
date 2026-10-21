@@ -240,76 +240,6 @@ export const App: React.FC = () => {
     return <RoomEntryView onJoinSuccess={handleJoinSuccess} savedSession={session} />;
   }
 
-  // 1. DEDICATED BANKER PANEL
-  if (view === 'banker' && isBanker && room && currentPlayer) {
-    return (
-      <BankerPanel
-        room={room}
-        players={players}
-        properties={properties}
-        transactions={transactions}
-        debts={debts}
-        currentBanker={currentPlayer}
-        onBack={() => setView('home')}
-        onAdjustBalance={async (targetId, diff, reason) => {
-          await GameService.bankerAdjustBalance(room.id, session.sessionToken, targetId, diff, reason);
-          await refreshRoomData();
-        }}
-        onOverrideProperty={async (propId, newOwnerId, houses, hotels, mortgaged, reason) => {
-          await GameService.bankerOverrideProperty(
-            room.id,
-            session.sessionToken,
-            propId,
-            newOwnerId,
-            houses,
-            hotels,
-            mortgaged,
-            reason
-          );
-          await refreshRoomData();
-        }}
-        onRevertTransaction={async (txId, reason) => {
-          await GameService.bankerRevertTransaction(room.id, session.sessionToken, txId, reason);
-          await refreshRoomData();
-        }}
-      />
-    );
-  }
-
-  // 2. PROPERTIES DIRECTORY VIEW
-  if (view === 'properties' && currentPlayer) {
-    return (
-      <PropertiesView
-        properties={properties}
-        players={players}
-        currentPlayer={currentPlayer}
-        onSelectProperty={(p) => setSelectedPropertyForModal(p)}
-        onQuickBuy={async (propId) => {
-          if (!room || !session) return;
-          try {
-            await GameService.buyPropertyFromBank(room.id, session.sessionToken, currentPlayer.id, propId);
-            showToast('Mülk satın alındı! 🏠');
-            await refreshRoomData();
-          } catch (e: any) {
-            showToast(e.message || 'Satın alma başarısız', 'error');
-          }
-        }}
-        onBack={() => setView('home')}
-      />
-    );
-  }
-
-  // 3. TRANSACTION HISTORY VIEW
-  if (view === 'history') {
-    return (
-      <HistoryView
-        transactions={transactions}
-        players={players}
-        onBack={() => setView('home')}
-      />
-    );
-  }
-
   // Summary counts for current player
   const myProperties = properties.filter((p) => p.owner_id === currentPlayer?.id);
   const myHouses = myProperties.reduce((sum, p) => sum + p.house_count, 0);
@@ -319,8 +249,65 @@ export const App: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
-      {/* ÜST BAŞLIK (HEADER) */}
-      <header className="app-header">
+      {view === 'banker' && isBanker && room && currentPlayer ? (
+        <BankerPanel
+          room={room}
+          players={players}
+          properties={properties}
+          transactions={transactions}
+          debts={debts}
+          currentBanker={currentPlayer}
+          onBack={() => setView('home')}
+          onAdjustBalance={async (targetId, diff, reason) => {
+            await GameService.bankerAdjustBalance(room.id, session.sessionToken, targetId, diff, reason);
+            await refreshRoomData();
+          }}
+          onOverrideProperty={async (propId, newOwnerId, houses, hotels, mortgaged, reason) => {
+            await GameService.bankerOverrideProperty(
+              room.id,
+              session.sessionToken,
+              propId,
+              newOwnerId,
+              houses,
+              hotels,
+              mortgaged,
+              reason
+            );
+            await refreshRoomData();
+          }}
+          onRevertTransaction={async (txId, reason) => {
+            await GameService.bankerRevertTransaction(room.id, session.sessionToken, txId, reason);
+            await refreshRoomData();
+          }}
+        />
+      ) : view === 'properties' && currentPlayer ? (
+        <PropertiesView
+          properties={properties}
+          players={players}
+          currentPlayer={currentPlayer}
+          onSelectProperty={(p) => setSelectedPropertyForModal(p)}
+          onQuickBuy={async (propId) => {
+            if (!room || !session) return;
+            try {
+              await GameService.buyPropertyFromBank(room.id, session.sessionToken, currentPlayer.id, propId);
+              showToast('Mülk satın alındı! 🏠');
+              await refreshRoomData();
+            } catch (e: any) {
+              showToast(e.message || 'Satın alma başarısız', 'error');
+            }
+          }}
+          onBack={() => setView('home')}
+        />
+      ) : view === 'history' ? (
+        <HistoryView
+          transactions={transactions}
+          players={players}
+          onBack={() => setView('home')}
+        />
+      ) : (
+        <>
+          {/* ÜST BAŞLIK (HEADER) */}
+          <header className="app-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div
             style={{
@@ -911,6 +898,8 @@ export const App: React.FC = () => {
           </div>
         </div>
       </main>
+    </>
+  )}
 
       {/* MODALLAR */}
       {showTransferModal && currentPlayer && (
