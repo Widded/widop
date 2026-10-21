@@ -42,6 +42,7 @@ import {
   AlertCircle,
   Radio,
   User,
+  RefreshCw,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -89,6 +90,7 @@ export const App: React.FC = () => {
   const [showDebtModal, setShowDebtModal] = useState<boolean>(false);
   const [selectedPropertyForModal, setSelectedPropertyForModal] = useState<Property | null>(null);
   const [selectedPlayerForDetail, setSelectedPlayerForDetail] = useState<Player | null>(null);
+  const [isManualRefreshing, setIsManualRefreshing] = useState<boolean>(false);
 
   // Refresh Room Data
   const refreshRoomData = useCallback(async () => {
@@ -109,20 +111,50 @@ export const App: React.FC = () => {
     }
   }, [session]);
 
-  // Initial load and Realtime subscription
+  const handleManualRefresh = async () => {
+    setIsManualRefreshing(true);
+    await refreshRoomData();
+    setTimeout(() => setIsManualRefreshing(false), 600);
+  };
+
+  // Initial load, Realtime subscription, and active Polling Heartbeat
   useEffect(() => {
     if (!session) {
       setLoading(false);
       return;
     }
 
+    // 1. Initial fetch
     refreshRoomData();
+
+    // 2. Realtime WebSocket subscription (Broadcast + Postgres CDC)
     const unsubscribe = GameService.subscribeToRoom(session.roomId, () => {
       refreshRoomData();
     });
 
+    // 3. 2-second background polling heartbeat for bulletproof cross-device sync
+    const pollInterval = setInterval(() => {
+      refreshRoomData();
+    }, 2000);
+
+    // 4. Instant sync when player unlocks phone or switches tabs
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshRoomData();
+      }
+    };
+    const handleFocus = () => {
+      refreshRoomData();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
     return () => {
       unsubscribe();
+      clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
     };
   }, [session, refreshRoomData]);
 
@@ -295,8 +327,24 @@ export const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Sağ Butonlar (Bankacı Paneli ve Çıkış) */}
+        {/* Sağ Butonlar (Yenile, Bankacı Paneli ve Çıkış) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            className="btn-icon"
+            style={{ width: '34px', height: '34px', minHeight: '34px' }}
+            onClick={handleManualRefresh}
+            title="Verileri Hemen Yenile"
+          >
+            <RefreshCw
+              size={15}
+              style={{
+                animation: isManualRefreshing ? 'spin 0.8s linear infinite' : 'none',
+                color: isManualRefreshing ? 'var(--emerald-primary)' : 'var(--text-muted)',
+              }}
+            />
+          </button>
+
           {isBanker && (
             <button
               type="button"

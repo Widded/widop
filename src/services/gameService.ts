@@ -16,6 +16,34 @@ const STORAGE_DATA_PREFIX = 'monopoly_data_';
 // Real-time synchronization channel for local multi-tab testing
 const broadcast = typeof window !== 'undefined' ? new BroadcastChannel('monopoly_istanbul_sync') : null;
 
+// Active Supabase realtime channels for cross-device broadcast
+const activeChannels = new Map<string, any>();
+
+function notifyRoomUpdate(roomId: string): void {
+  // 1. Same-browser tabs via BroadcastChannel
+  if (broadcast) {
+    try {
+      broadcast.postMessage({ type: 'ROOM_UPDATED', roomId, timestamp: Date.now() });
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // 2. Cross-device Realtime broadcast via Supabase Channel
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const channel = activeChannels.get(roomId) || supabase.channel(`room_${roomId}`);
+      channel.send({
+        type: 'broadcast',
+        event: 'room_state_changed',
+        payload: { roomId, timestamp: Date.now() },
+      });
+    } catch (e) {
+      console.warn('Realtime broadcast error:', e);
+    }
+  }
+}
+
 interface RoomState {
   room: Room;
   players: Player[];
@@ -61,13 +89,13 @@ export function getLocalRoomState(roomId: string): RoomState | null {
   }
 }
 
-function saveLocalRoomState(state: RoomState): void {
+function saveLocalRoomState(state: RoomState, skipNotify = false): void {
   try {
     localStorage.setItem(`${STORAGE_DATA_PREFIX}${state.room.id}`, JSON.stringify(state));
     // Index by code as well
     localStorage.setItem(`monopoly_code_${state.room.code.toUpperCase()}`, state.room.id);
-    if (broadcast) {
-      broadcast.postMessage({ type: 'ROOM_UPDATED', roomId: state.room.id });
+    if (!skipNotify) {
+      notifyRoomUpdate(state.room.id);
     }
   } catch (e) {
     console.error('Failed to save local room state', e);
@@ -307,6 +335,7 @@ export class GameService {
             sessionToken: rpcRes.session_token,
           };
           this.saveSession(session);
+          notifyRoomUpdate(rpcRes.room_id);
           return session;
         }
 
@@ -438,7 +467,7 @@ export class GameService {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500));
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000));
         const fetchPromise = Promise.all([
           supabase.from('rooms').select('*').eq('id', roomId).single(),
           supabase.from('players').select('*').eq('room_id', roomId).order('created_at', { ascending: true }),
@@ -468,7 +497,7 @@ export class GameService {
               debts: (debts as Debt[]) || [],
               debtPayments: (debtPayments as DebtPayment[]) || [],
             };
-            saveLocalRoomState(state);
+            saveLocalRoomState(state, true);
             return state;
           }
         }
@@ -1293,22 +1322,60 @@ export class GameService {
   }
 
   /**
-   * Subscribe to real-time updates for a room
+   * Broadcast an update event across all devices and tabs
+   */
+  static notifyRoomUpdate(roomId: string): void {
+    notifyRoomUpdate(roomId);
+  }
+
+  /**
+   * Subscribe to real-time updates for a room across all devices
    */
   static subscribeToRoom(roomId: string, onUpdate: () => void): () => void {
     let supabaseChannel: any = null;
 
     if (isSupabaseConfigured && supabase) {
-      supabaseChannel = supabase
-        .channel(`room_${roomId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', filter: `room_id=eq.${roomId}` }, () => {
+      supabaseChannel = supabase.channel(`room_${roomId}`, {
+        config: {
+          broadcast: { self: false },
+        },
+      });
+
+      // 1. Instant cross-device broadcast listener (<50ms)
+      supabaseChannel.on('broadcast', { event: 'room_state_changed' }, () => {
+        onUpdate();
+      });
+
+      // 2. PostgreSQL CDC changes on every relevant room table
+      const roomTables = ['players', 'properties', 'transactions', 'debts', 'debt_payments'];
+      roomTables.forEach((table) => {
+        supabaseChannel.on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table, filter: `room_id=eq.${roomId}` },
+          () => {
+            onUpdate();
+          }
+        );
+      });
+
+      // Also listen to room status updates (rooms PK is 'id')
+      supabaseChannel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
+        () => {
           onUpdate();
-        })
-        .subscribe();
+        }
+      );
+
+      supabaseChannel.subscribe((status: string) => {
+        if (status === 'SUBSCRIBED') {
+          activeChannels.set(roomId, supabaseChannel);
+        }
+      });
     }
 
     const broadcastHandler = (e: MessageEvent) => {
-      if (e.data && e.data.roomId === roomId) {
+      if (e.data && (e.data.roomId === roomId || e.data.type === 'ROOM_UPDATED')) {
         onUpdate();
       }
     };
@@ -1319,6 +1386,7 @@ export class GameService {
 
     return () => {
       if (supabaseChannel && supabase) {
+        activeChannels.delete(roomId);
         supabase.removeChannel(supabaseChannel);
       }
       if (broadcast) {
