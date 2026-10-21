@@ -330,22 +330,37 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                 </select>
               </div>
 
+              {/* Borçlu Oyuncu Seçimi (Büyük Dokunmatik Kartlar) */}
               <div>
                 <label className="input-label">Borcu Alan (Borçlu)</label>
-                <select
-                  className="input-field select-field"
-                  value={debtorId}
-                  onChange={(e) => setDebtorId(e.target.value)}
-                >
-                  <option value="">Oyuncu Seçin...</option>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '8px' }}>
                   {players
                     .filter((p) => p.id !== creditorId)
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} — Bakiye: {formatMoney(p.balance)}
-                      </option>
-                    ))}
-                </select>
+                    .map((p) => {
+                      const isSelected = p.id === debtorId;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setDebtorId(p.id)}
+                          className="card"
+                          style={{
+                            padding: '8px 6px',
+                            textAlign: 'center',
+                            cursor: 'pointer',
+                            borderColor: isSelected ? 'var(--emerald-primary)' : 'var(--border-subtle)',
+                            background: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-card)',
+                            boxShadow: isSelected ? '0 0 0 1px var(--emerald-primary)' : 'none',
+                          }}
+                        >
+                          <div style={{ fontSize: '13px', fontWeight: 700 }}>{p.name}</div>
+                          <div className="num-font" style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                            {formatMoney(p.balance)}
+                          </div>
+                        </button>
+                      );
+                    })}
+                </div>
               </div>
 
               <div>
@@ -353,9 +368,10 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                 <input
                   type="number"
                   inputMode="numeric"
+                  pattern="[0-9]*"
                   placeholder="0"
                   className="input-field num-font"
-                  style={{ fontSize: '20px', fontWeight: 700 }}
+                  style={{ fontSize: '22px', fontWeight: 700, textAlign: 'center', color: 'var(--amber-primary)' }}
                   value={createAmount}
                   onChange={(e) => setCreateAmount(e.target.value)}
                 />
@@ -365,7 +381,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                 <label className="input-label">Açıklama / Sebep</label>
                 <input
                   type="text"
-                  placeholder="Örn: Kira için borç, mülk alımı desteği..."
+                  placeholder="Örn: Kira desteği, tapu yardımı..."
                   className="input-field"
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
@@ -377,20 +393,19 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                   background: 'rgba(56, 189, 248, 0.08)',
                   border: '1px solid rgba(56, 189, 248, 0.2)',
                   borderRadius: 'var(--radius-md)',
-                  padding: '12px',
+                  padding: '10px 12px',
                   fontSize: '12px',
                   color: 'var(--text-muted)',
                 }}
               >
-                ℹ️ <strong>İşlem Sonucu:</strong> Borç veren oyuncunun bakiyesinden bu tutar düşülür, borçluya aktarılır
-                ve sisteme açık borç olarak kaydedilir.
+                ℹ️ <strong>İşlem Sonucu:</strong> Borç verenin nakit bakiyesinden düşülür, borçluya aktarılır ve açık borç kaydedilir.
               </div>
 
               <button
                 type="submit"
                 className="btn btn-primary"
-                style={{ marginTop: '8px' }}
-                disabled={loading}
+                style={{ marginTop: '4px', fontWeight: 800 }}
+                disabled={loading || !debtorId || !createAmount}
               >
                 {loading ? 'Kaydediliyor...' : 'Borcu Ver ve Kaydet'}
               </button>
@@ -406,17 +421,19 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                   border: '1px solid var(--border-subtle)',
                   borderRadius: 'var(--radius-md)',
                   padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Mevcut Açık Borç:</span>
-                  <strong style={{ fontSize: '16px', color: 'var(--amber-primary)' }}>
+                  <strong className="num-font" style={{ fontSize: '16px', color: 'var(--amber-primary)' }}>
                     {formatMoney(selectedDebt.current_amount)}
                   </strong>
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
-                  Borçlu: {players.find((p) => p.id === selectedDebt.debtor_id)?.name} ➔ Alacaklı:{' '}
-                  {players.find((p) => p.id === selectedDebt.creditor_id)?.name}
+                  Borçlu: <strong style={{ color: 'var(--text-main)' }}>{players.find((p) => p.id === selectedDebt.debtor_id)?.name}</strong> ➔ Alacaklı: <strong style={{ color: 'var(--text-main)' }}>{players.find((p) => p.id === selectedDebt.creditor_id)?.name}</strong>
                 </div>
               </div>
 
@@ -437,8 +454,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                   >
                     <CheckCheck size={18} style={{ flexShrink: 0 }} />
                     <span>
-                      <strong>Anlaşmalı Borç Kapatma:</strong> Tarafların karşılıklı mutabakatıyla kalan borcun bir
-                      kısmı ödenir, alacaklı kalanından feragat eder ve borç tamamen kapatılır.
+                      <strong>Anlaşmalı Borç Kapatma:</strong> Karşılıklı mutabakatla bir kısım ödenir, alacaklı kalanından feragat eder ve borç tamamen kapatılır.
                     </span>
                   </div>
 
@@ -447,6 +463,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                     <input
                       type="number"
                       inputMode="numeric"
+                      pattern="[0-9]*"
                       className="input-field num-font"
                       style={{ fontSize: '18px', fontWeight: 700 }}
                       value={paymentAmount}
@@ -459,10 +476,11 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="input-label">Alacaklının Feragat Ettiği (Sildiği) Tutar (₺)</label>
+                    <label className="input-label">Alacaklının Sildiği (Feragat Ettiği) Tutar (₺)</label>
                     <input
                       type="number"
                       inputMode="numeric"
+                      pattern="[0-9]*"
                       className="input-field num-font"
                       style={{ fontSize: '18px', fontWeight: 700 }}
                       value={forgivenAmount}
@@ -473,10 +491,11 @@ export const DebtModal: React.FC<DebtModalProps> = ({
               ) : (
                 <>
                   <div>
-                    <label className="input-label">Ödenecek Tutar (Kısmi veya Tam Ödeme)</label>
+                    <label className="input-label">Ödenecek Tutar (₺)</label>
                     <input
                       type="number"
                       inputMode="numeric"
+                      pattern="[0-9]*"
                       className="input-field num-font"
                       style={{ fontSize: '20px', fontWeight: 700 }}
                       value={paymentAmount}
@@ -506,6 +525,36 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                 </>
               )}
 
+              {/* Net Hesaplama Özeti (Açık Borç, Yapılacak Ödeme, Kalan Borç) */}
+              <div
+                style={{
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '10px 12px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block' }}>İşlem Sonrası Kalan Borç</span>
+                  <strong className="num-font" style={{ fontSize: '16px', color: 'var(--emerald-primary)' }}>
+                    {formatMoney(
+                      Math.max(
+                        0,
+                        selectedDebt.current_amount -
+                          (parseInt(paymentAmount, 10) || 0) -
+                          (isSettlement ? parseInt(forgivenAmount, 10) || 0 : 0)
+                      )
+                    )}
+                  </strong>
+                </div>
+                {isSettlement && (
+                  <span className="badge badge-emerald">Tamamen Kapanacak</span>
+                )}
+              </div>
+
               <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
                 <button
                   type="button"
@@ -518,7 +567,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  style={{ flex: 2 }}
+                  style={{ flex: 2, fontWeight: 800 }}
                   disabled={loading}
                 >
                   {loading ? 'İşleniyor...' : isSettlement ? 'Anlaşmayı Onayla ve Kapat' : 'Ödemeyi Yap'}

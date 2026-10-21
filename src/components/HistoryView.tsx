@@ -6,7 +6,7 @@ import { History, ArrowLeft, Filter, ArrowUpRight, ArrowDownLeft, ShieldCheck } 
 interface HistoryViewProps {
   transactions: Transaction[];
   players: Player[];
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 export const HistoryView: React.FC<HistoryViewProps> = ({ transactions, players, onBack }) => {
@@ -94,18 +94,25 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ transactions, players,
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '14px' }}>
       {/* Başlık ve Geri Butonu */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <button
-          className="btn btn-secondary"
-          style={{ padding: '8px 12px', minHeight: '38px', fontSize: '13px' }}
-          onClick={onBack}
-        >
-          <ArrowLeft size={16} />
-          Ana Ekrana Dön
-        </button>
-        <h2 style={{ fontSize: '18px' }}>İşlem Geçmişi</h2>
+        {onBack ? (
+          <button
+            className="btn btn-secondary"
+            style={{ padding: '8px 12px', minHeight: '36px', fontSize: '13px' }}
+            onClick={onBack}
+          >
+            <ArrowLeft size={16} />
+            Geri
+          </button>
+        ) : (
+          <div>
+            <h2 style={{ fontSize: '18px', fontWeight: 800 }}>İşlem Geçmişi</h2>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Masa hareketleri denetim kaydı</p>
+          </div>
+        )}
+        <span className="badge badge-slate" style={{ fontSize: '12px' }}>{filtered.length} Kayıt</span>
       </div>
 
       {/* Filtre Barı */}

@@ -42,8 +42,13 @@ import {
   AlertCircle,
   Radio,
   User,
+  Users,
   RefreshCw,
   Zap,
+  MoreHorizontal,
+  ArrowRight,
+  ShieldAlert,
+  Info,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -81,8 +86,12 @@ export const App: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
 
-  // Active View / Subpage
-  const [view, setView] = useState<'home' | 'properties' | 'history' | 'banker'>('home');
+  // Active Bottom Navigation Tab: 'game' | 'actions' | 'properties' | 'more'
+  const [activeTab, setActiveTab] = useState<'game' | 'actions' | 'properties' | 'more'>('game');
+
+  // Sub-view overlay state (for banker panel or standalone views)
+  const [view, setView] = useState<'main' | 'banker'>('main');
+  const [moreSubView, setMoreSubView] = useState<'menu' | 'history'>('menu');
 
   // Modals state
   const [showTransferModal, setShowTransferModal] = useState<boolean>(false);
@@ -192,7 +201,7 @@ export const App: React.FC = () => {
     };
   }, [session, refreshRoomData]);
 
-  // Handle Session Entry (Instant 0ms transition)
+  // Handle Session Entry (Instant transition)
   const handleJoinSuccess = (newSession: UserSession) => {
     setSession(newSession);
     const st = GameService.getLocalRoomState(newSession.roomId);
@@ -203,7 +212,8 @@ export const App: React.FC = () => {
       setTransactions(st.transactions);
       setDebts(st.debts);
     }
-    setView('home');
+    setView('main');
+    setActiveTab('game');
     setLoading(false);
     refreshRoomData();
   };
@@ -218,7 +228,8 @@ export const App: React.FC = () => {
       setProperties([]);
       setTransactions([]);
       setDebts([]);
-      setView('home');
+      setView('main');
+      setActiveTab('game');
     }
   };
 
@@ -227,6 +238,7 @@ export const App: React.FC = () => {
     if (room?.code) {
       navigator.clipboard.writeText(room.code);
       setCopiedCode(true);
+      showToast(`Oda kodu kopyalandı: ${room.code} 📋`);
       setTimeout(() => setCopiedCode(false), 2000);
     }
   };
@@ -246,9 +258,11 @@ export const App: React.FC = () => {
   const myHotels = myProperties.reduce((sum, p) => sum + p.hotel_count, 0);
   const myDebtsOwed = debts.filter((d) => d.debtor_id === currentPlayer?.id && d.status === 'open');
   const myDebtsReceivable = debts.filter((d) => d.creditor_id === currentPlayer?.id && d.status === 'open');
+  const openDebtsCount = debts.filter((d) => d.status === 'open').length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100dvh' }}>
+      {/* 1. BANKACI PANELİ TAM EKRAN GÖRÜNÜMÜ */}
       {view === 'banker' && isBanker && room && currentPlayer ? (
         <BankerPanel
           room={room}
@@ -257,7 +271,7 @@ export const App: React.FC = () => {
           transactions={transactions}
           debts={debts}
           currentBanker={currentPlayer}
-          onBack={() => setView('home')}
+          onBack={() => setView('main')}
           onAdjustBalance={async (targetId, diff, reason) => {
             await GameService.bankerAdjustBalance(room.id, session.sessionToken, targetId, diff, reason);
             await refreshRoomData();
@@ -280,628 +294,870 @@ export const App: React.FC = () => {
             await refreshRoomData();
           }}
         />
-      ) : view === 'properties' && currentPlayer ? (
-        <PropertiesView
-          properties={properties}
-          players={players}
-          currentPlayer={currentPlayer}
-          onSelectProperty={(p) => setSelectedPropertyForModal(p)}
-          onQuickBuy={async (propId) => {
-            if (!room || !session) return;
-            try {
-              await GameService.buyPropertyFromBank(room.id, session.sessionToken, currentPlayer.id, propId);
-              showToast('Mülk satın alındı! 🏠');
-              await refreshRoomData();
-            } catch (e: any) {
-              showToast(e.message || 'Satın alma başarısız', 'error');
-            }
-          }}
-          onBack={() => setView('home')}
-        />
-      ) : view === 'history' ? (
-        <HistoryView
-          transactions={transactions}
-          players={players}
-          onBack={() => setView('home')}
-        />
       ) : (
         <>
-          {/* ÜST BAŞLIK (HEADER) */}
+          {/* 2. STANDART MOBİL HEADER */}
           <header className="app-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#03140a',
-            }}
-          >
-            <Building2 size={18} />
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>ODA:</span>
-              <button
-                type="button"
-                onClick={handleCopyCode}
-                className="badge badge-slate"
+            {/* Sol Taraf: Logo & Oda Kodu (1-Dokunuşla Kopyalama) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div
                 style={{
-                  fontSize: '13px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  gap: '5px',
-                  color: 'var(--text-main)',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--emerald-primary)',
                 }}
-                title="Oda kodunu kopyala"
               >
-                {room?.code}
-                {copiedCode ? <Check size={12} color="var(--emerald-primary)" /> : <Copy size={12} />}
-              </button>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '1px' }}>
-              <Radio
-                size={10}
-                style={{
-                  color: isSupabaseConfigured ? 'var(--emerald-primary)' : 'var(--blue-primary)',
-                  animation: 'pulse 2s infinite',
-                }}
-              />
-              <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
-                {isSupabaseConfigured ? 'Supabase Canlı' : 'Yerel Senkron'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Sağ Butonlar (Yenile, Bankacı Paneli ve Çıkış) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            type="button"
-            className="btn-icon"
-            style={{ width: '34px', height: '34px', minHeight: '34px' }}
-            onClick={handleManualRefresh}
-            title="Verileri Hemen Yenile"
-          >
-            <RefreshCw
-              size={15}
-              style={{
-                animation: isManualRefreshing ? 'spin 0.8s linear infinite' : 'none',
-                color: isManualRefreshing ? 'var(--emerald-primary)' : 'var(--text-muted)',
-              }}
-            />
-          </button>
-
-          {isBanker && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{
-                padding: '6px 10px',
-                fontSize: '12px',
-                minHeight: '34px',
-                borderColor: 'rgba(16, 185, 129, 0.4)',
-                color: 'var(--emerald-primary)',
-              }}
-              onClick={() => setView('banker')}
-            >
-              <ShieldCheck size={14} />
-              Bankacı Paneli
-            </button>
-          )}
-
-          <button
-            type="button"
-            className="btn-icon"
-            style={{ width: '34px', height: '34px', minHeight: '34px' }}
-            onClick={handleLeaveRoom}
-            title="Odadan Ayrıl"
-          >
-            <LogOut size={16} />
-          </button>
-        </div>
-      </header>
-
-      {/* ANA İÇERİK ALANI */}
-      <main style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
-        {/* AKTİF OYUNCU ÖZET KARTI */}
-        {currentPlayer && (
-          <div
-            className="card"
-            style={{
-              background: 'linear-gradient(145deg, #151e30 0%, #0f1624 100%)',
-              borderColor: 'rgba(16, 185, 129, 0.3)',
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Hoş Geldin,</span>
-                <h2 style={{ fontSize: '18px', fontWeight: 800 }}>{currentPlayer.name}</h2>
+                <Building2 size={17} />
               </div>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                {currentPlayer.is_owner && <span className="badge badge-emerald">Oda Sahibi</span>}
-                {currentPlayer.is_banker && (
-                  <span className="badge badge-emerald" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                    👑 Bankacı
+
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <button
+                    type="button"
+                    onClick={handleCopyCode}
+                    className="badge badge-slate"
+                    style={{
+                      fontSize: '13px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      gap: '4px',
+                      color: 'var(--text-main)',
+                      padding: '2px 8px',
+                    }}
+                    title="Oda kodunu kopyala"
+                  >
+                    <span>#{room?.code}</span>
+                    {copiedCode ? <Check size={12} color="var(--emerald-primary)" /> : <Copy size={11} />}
+                  </button>
+
+                  <span className="badge badge-slate" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    {players.length} Oyuncu
                   </span>
-                )}
+                </div>
               </div>
             </div>
 
-            <div
-              style={{
-                marginTop: '14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-end',
-                flexWrap: 'wrap',
-                gap: '8px',
-              }}
-            >
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700 }}>
-                  Kullanılabilir Nakit Bakiye
-                </span>
-                <h1
-                  className="num-font"
-                  style={{
-                    fontSize: '34px',
-                    fontWeight: 800,
-                    color: 'var(--emerald-primary)',
-                    letterSpacing: '-0.03em',
-                    marginTop: '2px',
-                    lineHeight: 1.1,
-                  }}
-                >
-                  {formatMoney(currentPlayer.balance)}
-                </h1>
-              </div>
-
-              {/* Yalnızca Masa Bankacısı için Hızlı Kendine Maaş Butonu */}
-              {currentPlayer.is_banker && (
+            {/* Sağ Taraf: Bankacı Butonu (varsa) & Yenile Butonu */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {isBanker && (
                 <button
                   type="button"
-                  onClick={() => handleBankerGiveSalary(currentPlayer.id, 'Kendinize')}
                   className="btn"
                   style={{
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                    color: '#03140a',
-                    fontWeight: 800,
-                    fontSize: '12px',
-                    padding: '6px 12px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                    padding: '5px 9px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    minHeight: '32px',
+                    borderRadius: '8px',
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    borderColor: 'rgba(16, 185, 129, 0.35)',
+                    color: 'var(--emerald-primary)',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '4px',
-                    cursor: 'pointer',
-                    minHeight: '34px',
                   }}
-                  title="Başlangıç çizgisinden geçiş maaşı (+200 ₺)"
+                  onClick={() => setView('banker')}
+                  title="Bankacı Yönetim Paneli"
                 >
-                  <Zap size={14} /> +200 ₺ Maaşım
+                  <ShieldCheck size={13} />
+                  <span>Bankacı</span>
                 </button>
               )}
-            </div>
 
-            {/* Varlık & Borç İstatistikleri */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: '8px',
-                marginTop: '12px',
-                paddingTop: '10px',
-                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-              }}
-            >
-              <div style={{ textAlign: 'center' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Mülkler</span>
-                <p style={{ fontWeight: 700, fontSize: '14px' }}>{myProperties.length}</p>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Binalar</span>
-                <p style={{ fontWeight: 700, fontSize: '14px' }}>
-                  {myHouses} Ev / {myHotels} Otel
-                </p>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Borç Durumu</span>
-                <p style={{ fontWeight: 700, fontSize: '14px' }}>
-                  {myDebtsOwed.length > 0 ? (
-                    <span style={{ color: 'var(--rose-primary)' }}>{myDebtsOwed.length} Borç</span>
-                  ) : myDebtsReceivable.length > 0 ? (
-                    <span style={{ color: 'var(--emerald-primary)' }}>{myDebtsReceivable.length} Alacak</span>
-                  ) : (
-                    <span style={{ color: 'var(--text-dim)' }}>Temiz</span>
-                  )}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* HIZLI İŞLEM MERKEZİ (SADE 2x2 MOBİL KART DÜZENİ) */}
-        <div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            {/* 1. KİRA ÖDE */}
-            <div
-              className="card card-interactive"
-              style={{
-                padding: '12px 14px',
-                background: 'linear-gradient(145deg, rgba(245, 158, 11, 0.12) 0%, rgba(245, 158, 11, 0.03) 100%)',
-                borderColor: 'rgba(245, 158, 11, 0.35)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-                cursor: 'pointer',
-              }}
-              onClick={() => setShowRentModal(true)}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div
+              <button
+                type="button"
+                className="btn-icon"
+                style={{ width: '32px', height: '32px', minHeight: '32px' }}
+                onClick={handleManualRefresh}
+                title="Verileri Yenile"
+              >
+                <RefreshCw
+                  size={14}
                   style={{
-                    width: '34px',
-                    height: '34px',
-                    borderRadius: '10px',
-                    background: 'rgba(245, 158, 11, 0.2)',
-                    color: 'var(--amber-primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                    animation: isManualRefreshing ? 'spin 0.8s linear infinite' : 'none',
+                    color: isManualRefreshing ? 'var(--emerald-primary)' : 'var(--text-muted)',
                   }}
-                >
-                  <Receipt size={18} />
-                </div>
-                <span className="badge badge-slate" style={{ fontSize: '10px', padding: '1px 6px' }}>En Sık</span>
-              </div>
-              <div>
-                <strong style={{ fontSize: '14px', color: 'var(--text-main)', display: 'block' }}>Kira Öde</strong>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Arsa sahibine kira ver</span>
-              </div>
+                />
+              </button>
             </div>
+          </header>
 
-            {/* 2. PARA GÖNDER */}
-            <div
-              className="card card-interactive"
-              style={{
-                padding: '12px 14px',
-                background: 'linear-gradient(145deg, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0.03) 100%)',
-                borderColor: 'rgba(16, 185, 129, 0.35)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-                cursor: 'pointer',
-              }}
-              onClick={() => {
-                setTransferTargetPlayerId(undefined);
-                setShowTransferModal(true);
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div
-                  style={{
-                    width: '34px',
-                    height: '34px',
-                    borderRadius: '10px',
-                    background: 'rgba(16, 185, 129, 0.2)',
-                    color: 'var(--emerald-primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Send size={18} />
-                </div>
-                <span className="badge badge-emerald" style={{ fontSize: '10px', padding: '1px 6px' }}>Hızlı</span>
-              </div>
-              <div>
-                <strong style={{ fontSize: '14px', color: 'var(--text-main)', display: 'block' }}>Para Gönder</strong>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Arkadaşına para aktar</span>
-              </div>
-            </div>
+          {/* 3. ANA İÇERİK ALANI (4 ALT SEKMEYE GÖRE DEĞİŞEN İÇERİK) */}
+          <main className="main-content-scroll" style={{ padding: '12px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* ========================================================= */}
+            {/* SEKME 1: OYUN (OYUNCULAR VE BAKİYELER) */}
+            {/* ========================================================= */}
+            {activeTab === 'game' && (
+              <>
+                {/* AKTİF OYUNCU KİŞİSEL BAKİYE KARTI */}
+                {currentPlayer && (
+                  <div
+                    className="card"
+                    style={{
+                      background: 'linear-gradient(180deg, #131c2e 0%, #0e1524 100%)',
+                      borderColor: 'rgba(16, 185, 129, 0.25)',
+                      padding: '14px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <span style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Mevcut Bakiyeniz
+                        </span>
+                        <h1
+                          className="num-font"
+                          style={{
+                            fontSize: '32px',
+                            fontWeight: 800,
+                            color: 'var(--emerald-primary)',
+                            letterSpacing: '-0.02em',
+                            lineHeight: 1.1,
+                            marginTop: '2px',
+                          }}
+                        >
+                          {formatMoney(currentPlayer.balance)}
+                        </h1>
+                      </div>
 
-            {/* 3. VERGİ ÖDE */}
-            <div
-              className="card card-interactive"
-              style={{
-                padding: '12px 14px',
-                background: isBanker
-                  ? 'linear-gradient(145deg, rgba(16, 185, 129, 0.15) 0%, rgba(56, 189, 248, 0.05) 100%)'
-                  : 'linear-gradient(145deg, rgba(244, 63, 94, 0.12) 0%, rgba(244, 63, 94, 0.03) 100%)',
-                borderColor: isBanker ? 'rgba(16, 185, 129, 0.4)' : 'rgba(244, 63, 94, 0.35)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-                cursor: 'pointer',
-              }}
-              onClick={() => setShowBankModal(true)}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div
-                  style={{
-                    width: '34px',
-                    height: '34px',
-                    borderRadius: '10px',
-                    background: isBanker ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.2)',
-                    color: isBanker ? 'var(--emerald-primary)' : 'var(--rose-primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Landmark size={18} />
-                </div>
-                <span className={`badge ${isBanker ? 'badge-emerald' : 'badge-slate'}`} style={{ fontSize: '10px', padding: '1px 6px' }}>
-                  {isBanker ? 'Kasa' : 'Banka'}
-                </span>
-              </div>
-              <div>
-                <strong style={{ fontSize: '14px', color: 'var(--text-main)', display: 'block' }}>
-                  {isBanker ? 'Banka & Kasa' : 'Vergi Öde'}
-                </strong>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {isBanker ? 'Maaş ver / tahsil et' : 'Gelir, ceza veya kodes'}
-                </span>
-              </div>
-            </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          {currentPlayer.is_owner && <span className="badge badge-emerald">Oda Kurucusu</span>}
+                          {currentPlayer.is_banker && <span className="badge badge-amber">👑 Bankacı</span>}
+                        </div>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-main)' }}>
+                          {currentPlayer.name}
+                        </span>
+                      </div>
+                    </div>
 
-            {/* 4. BORÇ VERME */}
-            <div
-              className="card card-interactive"
-              style={{
-                padding: '12px 14px',
-                background: 'linear-gradient(145deg, rgba(56, 189, 248, 0.12) 0%, rgba(56, 189, 248, 0.03) 100%)',
-                borderColor: 'rgba(56, 189, 248, 0.35)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-                cursor: 'pointer',
-              }}
-              onClick={() => setShowDebtModal(true)}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div
-                  style={{
-                    width: '34px',
-                    height: '34px',
-                    borderRadius: '10px',
-                    background: 'rgba(56, 189, 248, 0.2)',
-                    color: 'var(--blue-primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <HandCoins size={18} />
-                </div>
-                {myDebtsOwed.length > 0 ? (
-                  <span className="badge badge-rose" style={{ fontSize: '9px', padding: '1px 5px' }}>
-                    {myDebtsOwed.length} Borç
-                  </span>
-                ) : (
-                  <span className="badge badge-slate" style={{ fontSize: '10px', padding: '1px 6px' }}>Borç</span>
+                    {/* Varlık & Borç Özeti (3 Sütun) */}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gap: '6px',
+                        marginTop: '12px',
+                        paddingTop: '10px',
+                        borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+                      }}
+                    >
+                      <div style={{ textAlign: 'center' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Tapular</span>
+                        <p style={{ fontWeight: 700, fontSize: '13px' }}>{myProperties.length} Adet</p>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Binalar</span>
+                        <p style={{ fontWeight: 700, fontSize: '13px' }}>
+                          {myHouses} Ev {myHotels > 0 ? `• ${myHotels} Otel` : ''}
+                        </p>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Borç Durumu</span>
+                        <p style={{ fontWeight: 700, fontSize: '13px' }}>
+                          {myDebtsOwed.length > 0 ? (
+                            <span style={{ color: 'var(--rose-primary)' }}>{myDebtsOwed.length} Borç</span>
+                          ) : myDebtsReceivable.length > 0 ? (
+                            <span style={{ color: 'var(--emerald-primary)' }}>{myDebtsReceivable.length} Alacak</span>
+                          ) : (
+                            <span style={{ color: 'var(--text-dim)' }}>Temiz</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </div>
-              <div>
-                <strong style={{ fontSize: '14px', color: 'var(--text-main)', display: 'block' }}>Borç Verme</strong>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Arkadaşına borç aç/kapat</span>
-              </div>
-            </div>
-          </div>
 
-          {/* İkincil İnceleme Araçları (Tapu Rehberi & Geçmiş) */}
-          <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{
-                flex: 1,
-                fontSize: '11px',
-                padding: '7px 10px',
-                minHeight: '34px',
-                justifyContent: 'center',
-                gap: '6px',
-                color: 'var(--text-main)',
-              }}
-              onClick={() => setView('properties')}
-            >
-              <Building size={14} color="var(--blue-primary)" />
-              Tapuları İncele ({properties.length})
-            </button>
+                {/* DİKEY SIRALANMIŞ OYUNCU KARTLARI */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', padding: '0 2px' }}>
+                    <h3 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-muted)' }}>
+                      Masa Oyuncuları ({players.length})
+                    </h3>
+                    <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Detay için dokunun</span>
+                  </div>
 
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{
-                flex: 1,
-                fontSize: '11px',
-                padding: '7px 10px',
-                minHeight: '34px',
-                justifyContent: 'center',
-                gap: '6px',
-                color: 'var(--text-muted)',
-              }}
-              onClick={() => setView('history')}
-            >
-              <History size={14} color="var(--text-dim)" />
-              İşlem Geçmişi
-            </button>
-          </div>
-        </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {players.map((p) => {
+                      const pProps = properties.filter((pr) => pr.owner_id === p.id);
+                      const pHouses = pProps.reduce((sum, pr) => sum + pr.house_count, 0);
+                      const pHotels = pProps.reduce((sum, pr) => sum + pr.hotel_count, 0);
+                      const pDebts = debts.filter((d) => d.debtor_id === p.id && d.status === 'open');
+                      const isCurrent = p.id === currentPlayer?.id;
+                      const uniqueColors = Array.from(new Set(pProps.map((pr) => pr.group_color)));
 
-        {/* OYUNCU KARTLARI LİSTESİ */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <h3 style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Masa Oyuncuları ({players.length})</h3>
-            <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Detay için dokunun</span>
-          </div>
+                      return (
+                        <div
+                          key={p.id}
+                          className="card card-interactive"
+                          style={{
+                            padding: '10px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer',
+                            borderColor: isCurrent ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-subtle)',
+                            background: isCurrent ? 'rgba(16, 185, 129, 0.04)' : 'var(--bg-card)',
+                          }}
+                          onClick={() => setSelectedPlayerForDetail(p)}
+                        >
+                          {/* Sol: Avatar, İsim ve Varlıklar */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div
+                              style={{
+                                width: '36px',
+                                height: '36px',
+                                borderRadius: '50%',
+                                background: isCurrent ? 'var(--emerald-primary)' : 'rgba(255, 255, 255, 0.08)',
+                                color: isCurrent ? '#03140a' : 'var(--text-main)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 800,
+                                fontSize: '15px',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {p.name.charAt(0).toUpperCase()}
+                            </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {players.map((p) => {
-              const pProps = properties.filter((pr) => pr.owner_id === p.id);
-              const pHouses = pProps.reduce((sum, pr) => sum + pr.house_count, 0);
-              const pHotels = pProps.reduce((sum, pr) => sum + pr.hotel_count, 0);
-              const pDebts = debts.filter((d) => d.debtor_id === p.id && d.status === 'open');
-              const isCurrent = p.id === currentPlayer?.id;
-              const uniqueColors = Array.from(new Set(pProps.map((pr) => pr.group_color)));
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <strong style={{ fontSize: '14px' }}>{p.name}</strong>
+                                {isCurrent && (
+                                  <span className="badge badge-emerald" style={{ fontSize: '9px', padding: '1px 5px' }}>
+                                    Siz
+                                  </span>
+                                )}
+                                {p.is_banker && (
+                                  <span className="badge badge-amber" style={{ fontSize: '9px', padding: '1px 5px' }}>
+                                    Bankacı
+                                  </span>
+                                )}
+                              </div>
 
-              return (
-                <div
-                  key={p.id}
-                  className="card card-interactive"
-                  style={{
-                    padding: '10px 12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    cursor: 'pointer',
-                    borderColor: isCurrent ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-subtle)',
-                  }}
-                  onClick={() => setSelectedPlayerForDetail(p)}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              {/* İkincil Bilgiler: Tapu rengi noktaları & Bina sayısı */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                                {uniqueColors.length > 0 && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginRight: '3px' }}>
+                                    {uniqueColors.map((col, idx) => (
+                                      <span
+                                        key={idx}
+                                        style={{
+                                          width: '6px',
+                                          height: '6px',
+                                          borderRadius: '50%',
+                                          backgroundColor: col,
+                                          display: 'inline-block',
+                                        }}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+
+                                <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                                  {pProps.length} tapu
+                                </span>
+
+                                {(pHouses > 0 || pHotels > 0) && (
+                                  <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                                    • {pHouses > 0 ? `${pHouses}E` : ''} {pHotels > 0 ? `${pHotels}O` : ''}
+                                  </span>
+                                )}
+
+                                {pDebts.length > 0 && (
+                                  <span className="badge badge-rose" style={{ fontSize: '9px', padding: '0 4px' }}>
+                                    Borçlu
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Sağ: Büyük Bakiye ve Hızlı Aksiyon Butonu */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ textAlign: 'right' }}>
+                              <strong
+                                className="num-font"
+                                style={{ fontSize: '16px', fontWeight: 800, color: 'var(--emerald-primary)', display: 'block' }}
+                              >
+                                {formatMoney(p.balance)}
+                              </strong>
+                            </div>
+
+                            {/* Masa Bankacısı ise: Tek Dokunuşla Maaş Butonu */}
+                            {currentPlayer?.is_banker && (
+                              <button
+                                type="button"
+                                className="btn"
+                                style={{
+                                  padding: '4px 7px',
+                                  fontSize: '11px',
+                                  fontWeight: 800,
+                                  minHeight: '28px',
+                                  background: 'rgba(16, 185, 129, 0.15)',
+                                  color: 'var(--emerald-primary)',
+                                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                                  borderRadius: '6px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '2px',
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleBankerGiveSalary(p.id, p.name);
+                                }}
+                                title={`${p.name} başlangıçtan geçtiğinde +200 ₺ maaş ver`}
+                              >
+                                <Zap size={11} /> +200
+                              </button>
+                            )}
+
+                            {/* Kendisi değilse: Hızlı Gönder Butonu */}
+                            {!isCurrent && (
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  minHeight: '28px',
+                                  color: 'var(--emerald-primary)',
+                                  borderColor: 'rgba(16, 185, 129, 0.35)',
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTransferTargetPlayerId(p.id);
+                                  setShowTransferModal(true);
+                                }}
+                                title={`${p.name}'a Para Gönder`}
+                              >
+                                Gönder
+                              </button>
+                            )}
+
+                            <ChevronRight size={14} color="var(--text-dim)" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ========================================================= */}
+            {/* SEKME 2: İŞLEMLER (HIZLI İŞLEM MERKEZİ) */}
+            {/* ========================================================= */}
+            {activeTab === 'actions' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <h2 style={{ fontSize: '18px', fontWeight: 800 }}>İşlem Merkezi</h2>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Sık kullanılan Monopoly eylemleri</p>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  {/* 1. PARA GÖNDER */}
+                  <div
+                    className="card card-interactive"
+                    style={{
+                      padding: '14px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      borderColor: 'rgba(16, 185, 129, 0.3)',
+                    }}
+                    onClick={() => {
+                      setTransferTargetPlayerId(undefined);
+                      setShowTransferModal(true);
+                    }}
+                  >
                     <div
                       style={{
                         width: '36px',
                         height: '36px',
-                        borderRadius: '50%',
-                        background: isCurrent ? 'var(--emerald-primary)' : 'rgba(255, 255, 255, 0.08)',
-                        color: isCurrent ? '#03140a' : 'var(--text-main)',
+                        borderRadius: '10px',
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        color: 'var(--emerald-primary)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontWeight: 800,
-                        fontSize: '15px',
-                        flexShrink: 0,
                       }}
                     >
-                      {p.name.charAt(0).toUpperCase()}
+                      <Send size={18} />
                     </div>
-
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <strong style={{ fontSize: '14px' }}>{p.name}</strong>
-                        {isCurrent && <span className="badge badge-emerald" style={{ fontSize: '9px', padding: '1px 5px' }}>Siz</span>}
-                        {p.is_banker && <span className="badge badge-slate" style={{ fontSize: '9px', padding: '1px 5px' }}>Bankacı</span>}
-                      </div>
-
-                      {/* Mülk Renk Noktaları ve Varlık Özeti */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px', flexWrap: 'wrap' }}>
-                        {uniqueColors.length > 0 && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginRight: '2px' }}>
-                            {uniqueColors.map((col, idx) => (
-                              <span
-                                key={idx}
-                                style={{
-                                  width: '7px',
-                                  height: '7px',
-                                  borderRadius: '50%',
-                                  backgroundColor: col,
-                                  display: 'inline-block',
-                                }}
-                              />
-                            ))}
-                          </div>
-                        )}
-
-                        <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{pProps.length} tapu</span>
-                        {(pHouses > 0 || pHotels > 0) && (
-                          <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
-                            • {pHouses > 0 ? `${pHouses} Ev` : ''} {pHotels > 0 ? `${pHotels} Otel` : ''}
-                          </span>
-                        )}
-                        {pDebts.length > 0 && (
-                          <span className="badge badge-rose" style={{ fontSize: '9px', padding: '0 5px' }}>
-                            Borçlu
-                          </span>
-                        )}
-                      </div>
+                      <strong style={{ fontSize: '14px', display: 'block' }}>Para Gönder</strong>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Arkadaşına para aktar</span>
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <div style={{ textAlign: 'right', marginRight: '2px' }}>
-                      <strong
-                        className="num-font"
-                        style={{ fontSize: '15px', color: 'var(--emerald-primary)', display: 'block' }}
-                      >
-                        {formatMoney(p.balance)}
-                      </strong>
+                  {/* 2. KİRA ÖDE */}
+                  <div
+                    className="card card-interactive"
+                    style={{
+                      padding: '14px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      borderColor: 'rgba(245, 158, 11, 0.3)',
+                    }}
+                    onClick={() => setShowRentModal(true)}
+                  >
+                    <div
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '10px',
+                        background: 'rgba(245, 158, 11, 0.15)',
+                        color: 'var(--amber-primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Receipt size={18} />
+                    </div>
+                    <div>
+                      <strong style={{ fontSize: '14px', display: 'block' }}>Kira Öde</strong>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Arsa sahibine kira ver</span>
+                    </div>
+                  </div>
+
+                  {/* 3. VERGİ ÖDE / BANKA */}
+                  <div
+                    className="card card-interactive"
+                    style={{
+                      padding: '14px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      borderColor: 'rgba(239, 68, 68, 0.3)',
+                    }}
+                    onClick={() => setShowBankModal(true)}
+                  >
+                    <div
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '10px',
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        color: 'var(--rose-primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Landmark size={18} />
+                    </div>
+                    <div>
+                      <strong style={{ fontSize: '14px', display: 'block' }}>Vergi Öde</strong>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Banka, gelir veya ceza</span>
+                    </div>
+                  </div>
+
+                  {/* 4. BORÇ İŞLEMLERİ */}
+                  <div
+                    className="card card-interactive"
+                    style={{
+                      padding: '14px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      borderColor: 'rgba(56, 189, 248, 0.3)',
+                    }}
+                    onClick={() => setShowDebtModal(true)}
+                  >
+                    <div
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '10px',
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        color: 'var(--blue-primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <HandCoins size={18} />
+                    </div>
+                    <div>
+                      <strong style={{ fontSize: '14px', display: 'block' }}>Borç Ver</strong>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Borç aç veya kapat</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Masa Bankacısı Özel Bölümü (Yalnızca bankacıya gösterilir) */}
+                {currentPlayer?.is_banker && (
+                  <div
+                    className="card"
+                    style={{
+                      marginTop: '6px',
+                      background: 'rgba(16, 185, 129, 0.05)',
+                      borderColor: 'rgba(16, 185, 129, 0.25)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--emerald-primary)' }}>
+                        👑 Masa Bankacısı Hızlı Aksiyonları
+                      </span>
                     </div>
 
-                    {/* Masa Bankacısı ise: Tek Dokunuşla +200 ₺ Maaş Verme Butonu */}
-                    {currentPlayer?.is_banker && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
                       <button
                         type="button"
                         className="btn"
                         style={{
-                          padding: '4px 8px',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          minHeight: '28px',
+                          flex: 1,
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          minHeight: '38px',
                           background: 'rgba(16, 185, 129, 0.15)',
                           color: 'var(--emerald-primary)',
                           border: '1px solid rgba(16, 185, 129, 0.35)',
-                          borderRadius: '8px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '2px',
                         }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleBankerGiveSalary(p.id, p.name);
-                        }}
-                        title={`${p.name} başlangıçtan geçtiğinde +200 ₺ maaş ver`}
+                        onClick={() => handleBankerGiveSalary(currentPlayer.id, 'Kendinize')}
                       >
-                        <Zap size={12} /> +200 ₺
+                        <Zap size={14} /> +200 ₺ Maaşım
                       </button>
-                    )}
 
-                    {/* Başka oyuncu ise: Hızlı Para Gönder Butonu */}
-                    {!isCurrent && (
                       <button
                         type="button"
                         className="btn btn-secondary"
                         style={{
-                          padding: '4px 8px',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          minHeight: '28px',
-                          color: 'var(--emerald-primary)',
-                          borderColor: 'rgba(16, 185, 129, 0.4)',
-                          gap: '3px',
+                          flex: 1,
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          minHeight: '38px',
                         }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTransferTargetPlayerId(p.id);
-                          setShowTransferModal(true);
-                        }}
-                        title={`${p.name}'a Para Gönder`}
+                        onClick={() => setView('banker')}
                       >
-                        <Send size={11} /> Gönder
+                        <ShieldCheck size={14} /> Bankacı Paneli
                       </button>
-                    )}
-
-                    <ChevronRight size={14} color="var(--text-dim)" />
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </main>
-    </>
-  )}
+                )}
+              </div>
+            )}
 
-      {/* MODALLAR */}
+            {/* ========================================================= */}
+            {/* SEKME 3: MÜLKLER (BÜTÜN MÜLKLERİN LİSTESİ) */}
+            {/* ========================================================= */}
+            {activeTab === 'properties' && currentPlayer && (
+              <PropertiesView
+                properties={properties}
+                players={players}
+                currentPlayer={currentPlayer}
+                onSelectProperty={(p) => setSelectedPropertyForModal(p)}
+                onQuickBuy={async (propId) => {
+                  if (!room || !session) return;
+                  try {
+                    await GameService.buyPropertyFromBank(room.id, session.sessionToken, currentPlayer.id, propId);
+                    showToast('Mülk satın alındı! 🏠');
+                    await refreshRoomData();
+                  } catch (e: any) {
+                    showToast(e.message || 'Satın alma başarısız', 'error');
+                  }
+                }}
+              />
+            )}
+
+            {/* ========================================================= */}
+            {/* SEKME 4: DAHA FAZLA (BORÇLAR, GEÇMİŞ, BİLGİLER) */}
+            {/* ========================================================= */}
+            {activeTab === 'more' && (
+              <>
+                {moreSubView === 'history' ? (
+                  <HistoryView
+                    transactions={transactions}
+                    players={players}
+                    onBack={() => setMoreSubView('menu')}
+                  />
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <h2 style={{ fontSize: '18px', fontWeight: 800 }}>Daha Fazla</h2>
+                      <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Borçlar, geçmiş ve oda ayarları</p>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {/* 1. Borçlar Yönetimi */}
+                      <div
+                        className="card card-interactive"
+                        style={{
+                          padding: '12px 14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => setShowDebtModal(true)}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div
+                            style={{
+                              width: '34px',
+                              height: '34px',
+                              borderRadius: '8px',
+                              background: 'rgba(56, 189, 248, 0.15)',
+                              color: 'var(--blue-primary)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <HandCoins size={17} />
+                          </div>
+                          <div>
+                            <strong style={{ fontSize: '14px', display: 'block' }}>Borç Yönetimi</strong>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                              Oyuncular arası açık borçlar ve mutabakat
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {openDebtsCount > 0 ? (
+                            <span className="badge badge-amber">{openDebtsCount} Açık</span>
+                          ) : (
+                            <span className="badge badge-slate">Temiz</span>
+                          )}
+                          <ChevronRight size={14} color="var(--text-dim)" />
+                        </div>
+                      </div>
+
+                      {/* 2. İşlem Geçmişi */}
+                      <div
+                        className="card card-interactive"
+                        style={{
+                          padding: '12px 14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => setMoreSubView('history')}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div
+                            style={{
+                              width: '34px',
+                              height: '34px',
+                              borderRadius: '8px',
+                              background: 'rgba(255, 255, 255, 0.08)',
+                              color: 'var(--text-main)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <History size={17} />
+                          </div>
+                          <div>
+                            <strong style={{ fontSize: '14px', display: 'block' }}>İşlem Geçmişi</strong>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                              Para, kira ve tapu kayıtları denetimi
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className="badge badge-slate">{transactions.length}</span>
+                          <ChevronRight size={14} color="var(--text-dim)" />
+                        </div>
+                      </div>
+
+                      {/* 3. Bankacı Paneli (Yalnızca bankacıya gösterilir) */}
+                      {isBanker && (
+                        <div
+                          className="card card-interactive"
+                          style={{
+                            padding: '12px 14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer',
+                            borderColor: 'rgba(16, 185, 129, 0.3)',
+                          }}
+                          onClick={() => setView('banker')}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div
+                              style={{
+                                width: '34px',
+                                height: '34px',
+                                borderRadius: '8px',
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                color: 'var(--emerald-primary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <ShieldCheck size={17} />
+                            </div>
+                            <div>
+                              <strong style={{ fontSize: '14px', display: 'block', color: 'var(--emerald-primary)' }}>
+                                Bankacı Yönetim Paneli
+                              </strong>
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                Bakiye düzeltme, tapu müdahalesi ve ters işlem
+                              </span>
+                            </div>
+                          </div>
+
+                          <ChevronRight size={14} color="var(--text-dim)" />
+                        </div>
+                      )}
+
+                      {/* 4. Masa Bilgileri & Senkronizasyon */}
+                      <div className="card" style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>
+                          Oda & Bağlantı Durumu
+                        </span>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                          <span style={{ color: 'var(--text-dim)' }}>Oda Kodu:</span>
+                          <strong className="num-font" style={{ color: 'var(--text-main)' }}>#{room?.code}</strong>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                          <span style={{ color: 'var(--text-dim)' }}>Veritabanı:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Radio
+                              size={10}
+                              style={{
+                                color: isSupabaseConfigured ? 'var(--emerald-primary)' : 'var(--blue-primary)',
+                              }}
+                            />
+                            <span style={{ fontSize: '12px', color: 'var(--text-main)' }}>
+                              {isSupabaseConfigured ? 'Supabase Canlı Bulut' : 'Yerel Senkron'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                          <span style={{ color: 'var(--text-dim)' }}>Senkronizasyon:</span>
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                            Gerçek Zamanlı WebSocket + 2s Nabız
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 5. Odadan Ayrıl */}
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{
+                          marginTop: '6px',
+                          borderColor: 'rgba(239, 68, 68, 0.3)',
+                          color: 'var(--rose-primary)',
+                          justifyContent: 'center',
+                        }}
+                        onClick={handleLeaveRoom}
+                      >
+                        <LogOut size={16} /> Odadan Ayrıl
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </main>
+
+          {/* 4. MOBİL SABİT ALT NAVİGASYON (EN FAZLA 4 ANA BÖLÜM) */}
+          <nav className="bottom-nav">
+            <div className="bottom-nav-inner">
+              {/* Sekme 1: Oyun */}
+              <button
+                type="button"
+                className={`bottom-nav-item ${activeTab === 'game' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab('game');
+                  setMoreSubView('menu');
+                }}
+              >
+                <div className="nav-icon-wrapper">
+                  <Users size={18} />
+                </div>
+                <span>Oyun</span>
+              </button>
+
+              {/* Sekme 2: İşlemler */}
+              <button
+                type="button"
+                className={`bottom-nav-item ${activeTab === 'actions' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab('actions');
+                  setMoreSubView('menu');
+                }}
+              >
+                <div className="nav-icon-wrapper">
+                  <Zap size={18} />
+                </div>
+                <span>İşlemler</span>
+              </button>
+
+              {/* Sekme 3: Mülkler */}
+              <button
+                type="button"
+                className={`bottom-nav-item ${activeTab === 'properties' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab('properties');
+                  setMoreSubView('menu');
+                }}
+              >
+                <div className="nav-icon-wrapper">
+                  <Building2 size={18} />
+                </div>
+                <span>Mülkler</span>
+              </button>
+
+              {/* Sekme 4: Daha Fazla */}
+              <button
+                type="button"
+                className={`bottom-nav-item ${activeTab === 'more' ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab('more');
+                  setMoreSubView('menu');
+                }}
+              >
+                <div className="nav-icon-wrapper" style={{ position: 'relative' }}>
+                  <MoreHorizontal size={18} />
+                  {openDebtsCount > 0 && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: '1px',
+                        right: '3px',
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        backgroundColor: 'var(--amber-primary)',
+                      }}
+                    />
+                  )}
+                </div>
+                <span>Daha Fazla</span>
+              </button>
+            </div>
+          </nav>
+        </>
+      )}
+
+      {/* 5. KÖK DÜZEYİNDE MODALLAR (HER SEKMEYLE 100% ENTEGRE) */}
       {showTransferModal && currentPlayer && (
         <TransferModal
           players={players}
@@ -1057,7 +1313,7 @@ export const App: React.FC = () => {
         <div
           style={{
             position: 'fixed',
-            bottom: '24px',
+            bottom: '70px',
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 9999,
@@ -1068,16 +1324,17 @@ export const App: React.FC = () => {
                 ? 'var(--blue-primary)'
                 : 'var(--emerald-primary)',
             color: toast.type === 'error' ? '#fff' : '#03140a',
-            padding: '10px 20px',
+            padding: '8px 16px',
             borderRadius: '999px',
-            boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
             fontSize: '13px',
             fontWeight: 800,
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
+            gap: '6px',
             animation: 'fadeIn 0.2s ease-out',
             pointerEvents: 'none',
+            whiteSpace: 'nowrap',
           }}
         >
           {toast.message}

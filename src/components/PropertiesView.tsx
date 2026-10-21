@@ -9,7 +9,7 @@ interface PropertiesViewProps {
   currentPlayer: Player;
   onSelectProperty: (property: Property) => void;
   onQuickBuy?: (propertyId: string) => Promise<void>;
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 export const PropertiesView: React.FC<PropertiesViewProps> = ({
@@ -49,18 +49,25 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
   }, [filtered]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px' }}>
-      {/* Başlık ve Geri Butonu */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '14px' }}>
+      {/* Başlık ve İsteğe Bağlı Geri Butonu */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <button
-          className="btn btn-secondary"
-          style={{ padding: '8px 12px', minHeight: '38px', fontSize: '13px' }}
-          onClick={onBack}
-        >
-          <ArrowLeft size={16} />
-          Ana Ekrana Dön
-        </button>
-        <h2 style={{ fontSize: '17px' }}>Monopoly Tapuları</h2>
+        {onBack ? (
+          <button
+            className="btn btn-secondary"
+            style={{ padding: '8px 12px', minHeight: '36px', fontSize: '13px' }}
+            onClick={onBack}
+          >
+            <ArrowLeft size={16} />
+            Geri
+          </button>
+        ) : (
+          <div>
+            <h2 style={{ fontSize: '18px', fontWeight: 800 }}>Tapu Senetleri</h2>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Mülk durumları ve kira bilgileri</p>
+          </div>
+        )}
+        <span className="badge badge-slate" style={{ fontSize: '12px' }}>{filtered.length} Tapu</span>
       </div>
 
       {/* Arama Kutusu */}
