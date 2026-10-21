@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Player, Property } from '../types';
 import { formatMoney } from '../utils/formatters';
-import { Building2, Home, Hotel, ShieldAlert, ArrowLeft } from 'lucide-react';
+import { Building2, Home, Hotel, ShieldAlert, ArrowLeft, Search } from 'lucide-react';
 
 interface PropertiesViewProps {
   properties: Property[];
@@ -21,19 +21,21 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
   onBack,
 }) => {
   const [filter, setFilter] = useState<'all' | 'mine' | 'for_sale' | 'mortgaged'>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   const filtered = useMemo(() => {
-    switch (filter) {
-      case 'mine':
-        return properties.filter((p) => p.owner_id === currentPlayer.id);
-      case 'for_sale':
-        return properties.filter((p) => !p.owner_id);
-      case 'mortgaged':
-        return properties.filter((p) => p.is_mortgaged);
-      default:
-        return properties;
-    }
-  }, [properties, filter, currentPlayer.id]);
+    return properties.filter((p) => {
+      if (filter === 'mine' && p.owner_id !== currentPlayer.id) return false;
+      if (filter === 'for_sale' && p.owner_id) return false;
+      if (filter === 'mortgaged' && !p.is_mortgaged) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return p.name.toLowerCase().includes(q) || p.group_name.toLowerCase().includes(q);
+      }
+      return true;
+    });
+  }, [properties, filter, currentPlayer.id, searchQuery]);
 
   // Group by group_key
   const grouped = useMemo(() => {
@@ -47,7 +49,7 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
   }, [filtered]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px' }}>
       {/* Başlık ve Geri Butonu */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <button
@@ -58,7 +60,29 @@ export const PropertiesView: React.FC<PropertiesViewProps> = ({
           <ArrowLeft size={16} />
           Ana Ekrana Dön
         </button>
-        <h2 style={{ fontSize: '18px' }}>Monopoly Mülkleri</h2>
+        <h2 style={{ fontSize: '17px' }}>Monopoly Tapuları</h2>
+      </div>
+
+      {/* Arama Kutusu */}
+      <div style={{ position: 'relative' }}>
+        <Search
+          size={16}
+          style={{
+            position: 'absolute',
+            left: '12px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            color: 'var(--text-dim)',
+          }}
+        />
+        <input
+          type="text"
+          placeholder="Cadde veya grup ara (örn: Kadıköy, Sarıyer, Boğaz)..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="input-field"
+          style={{ paddingLeft: '36px', fontSize: '13px', minHeight: '40px' }}
+        />
       </div>
 
       {/* Filtre Sekmeleri */}

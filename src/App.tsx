@@ -43,6 +43,7 @@ import {
   Radio,
   User,
   RefreshCw,
+  Zap,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -127,22 +128,26 @@ export const App: React.FC = () => {
     setTimeout(() => setIsManualRefreshing(false), 600);
   };
 
-  // 1-Tap Hızlı Başlangıç Parası (+200 ₺)
-  const handleQuickPassGo = async () => {
+  // Masa Bankacısının tek dokunuşla oyuncuya maaş (+200 ₺) dağıtması
+  const handleBankerGiveSalary = async (targetPlayerId: string, targetPlayerName: string) => {
     if (!room || !session || !currentPlayer) return;
+    if (!currentPlayer.is_banker) {
+      showToast('Yalnızca Masa Bankacısı para dağıtabilir!', 'error');
+      return;
+    }
     try {
       await GameService.bankTransaction(
         room.id,
         session.sessionToken,
-        currentPlayer.id,
+        targetPlayerId,
         200,
         'bank_to_player',
-        'Başlangıç Çizgisi Geçişi (+200 ₺)'
+        'Başlangıç Çizgisi Maaşı (+200 ₺)'
       );
-      showToast('+200 ₺ Başlangıç Parası Alındı! ⚡');
+      showToast(`${targetPlayerName} oyuncusuna +200 ₺ maaş verildi! ⚡`);
       await refreshRoomData();
     } catch (err: any) {
-      showToast(err.message || 'İşlem başarısız', 'error');
+      showToast(err.message || 'Maaş ödemesi başarısız', 'error');
     }
   };
 
@@ -434,53 +439,69 @@ export const App: React.FC = () => {
               </div>
               <div style={{ display: 'flex', gap: '6px' }}>
                 {currentPlayer.is_owner && <span className="badge badge-emerald">Oda Sahibi</span>}
-                {currentPlayer.is_banker && <span className="badge badge-slate">Bankacı</span>}
+                {currentPlayer.is_banker && (
+                  <span className="badge badge-emerald" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                    👑 Bankacı
+                  </span>
+                )}
               </div>
             </div>
 
-            <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '8px' }}>
+            <div
+              style={{
+                marginTop: '14px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-end',
+                flexWrap: 'wrap',
+                gap: '8px',
+              }}
+            >
               <div>
-                <span style={{ fontSize: '12px', color: 'var(--text-dim)', textTransform: 'uppercase' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700 }}>
                   Kullanılabilir Nakit Bakiye
                 </span>
                 <h1
                   className="num-font"
                   style={{
-                    fontSize: '36px',
+                    fontSize: '34px',
                     fontWeight: 800,
                     color: 'var(--emerald-primary)',
                     letterSpacing: '-0.03em',
                     marginTop: '2px',
+                    lineHeight: 1.1,
                   }}
                 >
                   {formatMoney(currentPlayer.balance)}
                 </h1>
               </div>
 
-              {/* ⚡ +200 ₺ Başlangıç Hızlı Butonu (Tek Dokunuşla Tahsil Et) */}
-              <button
-                type="button"
-                onClick={handleQuickPassGo}
-                className="btn"
-                style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: '#03140a',
-                  fontWeight: 800,
-                  fontSize: '13px',
-                  padding: '8px 14px',
-                  borderRadius: '12px',
-                  border: 'none',
-                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  cursor: 'pointer',
-                  minHeight: '38px',
-                }}
-                title="Başlangıç çizgisinden her geçişte tek dokunuşla 200 ₺ al"
-              >
-                ⚡ +200 ₺ Başlangıç
-              </button>
+              {/* Yalnızca Masa Bankacısı için Hızlı Kendine Maaş Butonu */}
+              {currentPlayer.is_banker && (
+                <button
+                  type="button"
+                  onClick={() => handleBankerGiveSalary(currentPlayer.id, 'Kendinize')}
+                  className="btn"
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#03140a',
+                    fontWeight: 800,
+                    fontSize: '12px',
+                    padding: '6px 12px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    cursor: 'pointer',
+                    minHeight: '34px',
+                  }}
+                  title="Başlangıç çizgisinden geçiş maaşı (+200 ₺)"
+                >
+                  <Zap size={14} /> +200 ₺ Maaşım
+                </button>
+              )}
             </div>
 
             {/* Varlık & Borç İstatistikleri */}
@@ -489,8 +510,8 @@ export const App: React.FC = () => {
                 display: 'grid',
                 gridTemplateColumns: 'repeat(3, 1fr)',
                 gap: '8px',
-                marginTop: '14px',
-                paddingTop: '12px',
+                marginTop: '12px',
+                paddingTop: '10px',
                 borderTop: '1px solid rgba(255, 255, 255, 0.08)',
               }}
             >
@@ -512,7 +533,7 @@ export const App: React.FC = () => {
                   ) : myDebtsReceivable.length > 0 ? (
                     <span style={{ color: 'var(--emerald-primary)' }}>{myDebtsReceivable.length} Alacak</span>
                   ) : (
-                    <span style={{ color: 'var(--text-dim)' }}>Borç Yok</span>
+                    <span style={{ color: 'var(--text-dim)' }}>Temiz</span>
                   )}
                 </p>
               </div>
@@ -520,68 +541,224 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* HIZLI İŞLEM ALANI (QUICK ACTION GRID) */}
+        {/* HIZLI İŞLEM MERKEZİ (SADE 2x2 MOBİL KART DÜZENİ) */}
         <div>
-          <h3 style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '10px' }}>Hızlı İşlemler</h3>
-          <div className="quick-action-grid">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            {/* 1. KİRA ÖDE */}
             <div
-              className="quick-action-tile"
+              className="card card-interactive"
+              style={{
+                padding: '12px 14px',
+                background: 'linear-gradient(145deg, rgba(245, 158, 11, 0.12) 0%, rgba(245, 158, 11, 0.03) 100%)',
+                borderColor: 'rgba(245, 158, 11, 0.35)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                cursor: 'pointer',
+              }}
+              onClick={() => setShowRentModal(true)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '10px',
+                    background: 'rgba(245, 158, 11, 0.2)',
+                    color: 'var(--amber-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Receipt size={18} />
+                </div>
+                <span className="badge badge-slate" style={{ fontSize: '10px', padding: '1px 6px' }}>En Sık</span>
+              </div>
+              <div>
+                <strong style={{ fontSize: '14px', color: 'var(--text-main)', display: 'block' }}>Kira Öde</strong>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Arsa sahibine kira ver</span>
+              </div>
+            </div>
+
+            {/* 2. PARA GÖNDER */}
+            <div
+              className="card card-interactive"
+              style={{
+                padding: '12px 14px',
+                background: 'linear-gradient(145deg, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0.03) 100%)',
+                borderColor: 'rgba(16, 185, 129, 0.35)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                cursor: 'pointer',
+              }}
               onClick={() => {
                 setTransferTargetPlayerId(undefined);
                 setShowTransferModal(true);
               }}
             >
-              <div className="tile-icon">
-                <Send size={18} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '10px',
+                    background: 'rgba(16, 185, 129, 0.2)',
+                    color: 'var(--emerald-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Send size={18} />
+                </div>
+                <span className="badge badge-emerald" style={{ fontSize: '10px', padding: '1px 6px' }}>Hızlı</span>
               </div>
-              <span className="tile-label">Para Gönder</span>
+              <div>
+                <strong style={{ fontSize: '14px', color: 'var(--text-main)', display: 'block' }}>Para Gönder</strong>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Arkadaşına para aktar</span>
+              </div>
             </div>
 
-            <div className="quick-action-tile" onClick={() => setShowRentModal(true)}>
-              <div className="tile-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: 'var(--amber-primary)' }}>
-                <Receipt size={18} />
+            {/* 3. MÜLKLER & TAPULAR */}
+            <div
+              className="card card-interactive"
+              style={{
+                padding: '12px 14px',
+                background: 'linear-gradient(145deg, rgba(56, 189, 248, 0.12) 0%, rgba(56, 189, 248, 0.03) 100%)',
+                borderColor: 'rgba(56, 189, 248, 0.35)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                cursor: 'pointer',
+              }}
+              onClick={() => setView('properties')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '10px',
+                    background: 'rgba(56, 189, 248, 0.2)',
+                    color: 'var(--blue-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Building size={18} />
+                </div>
+                <span className="badge badge-slate" style={{ fontSize: '10px', padding: '1px 6px' }}>
+                  {myProperties.length} Tapu
+                </span>
               </div>
-              <span className="tile-label">Kira Öde</span>
+              <div>
+                <strong style={{ fontSize: '14px', color: 'var(--text-main)', display: 'block' }}>Mülkler</strong>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Tapu al, ev inşa et</span>
+              </div>
             </div>
 
-            <div className="quick-action-tile" onClick={() => setShowDebtModal(true)}>
-              <div className="tile-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--blue-primary)' }}>
-                <HandCoins size={18} />
+            {/* 4. BANKA İŞLEMİ (Bankacı ise Kasa & Banka, Oyuncu ise Bankaya Öde) */}
+            <div
+              className="card card-interactive"
+              style={{
+                padding: '12px 14px',
+                background: isBanker
+                  ? 'linear-gradient(145deg, rgba(16, 185, 129, 0.15) 0%, rgba(56, 189, 248, 0.05) 100%)'
+                  : 'linear-gradient(145deg, rgba(244, 63, 94, 0.12) 0%, rgba(244, 63, 94, 0.03) 100%)',
+                borderColor: isBanker ? 'rgba(16, 185, 129, 0.4)' : 'rgba(244, 63, 94, 0.35)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                cursor: 'pointer',
+              }}
+              onClick={() => setShowBankModal(true)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '10px',
+                    background: isBanker ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.2)',
+                    color: isBanker ? 'var(--emerald-primary)' : 'var(--rose-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Landmark size={18} />
+                </div>
+                <span className={`badge ${isBanker ? 'badge-emerald' : 'badge-slate'}`} style={{ fontSize: '10px', padding: '1px 6px' }}>
+                  {isBanker ? 'Kasa' : 'Ödeme'}
+                </span>
               </div>
-              <span className="tile-label">Borç Ver / Al</span>
+              <div>
+                <strong style={{ fontSize: '14px', color: 'var(--text-main)', display: 'block' }}>
+                  {isBanker ? 'Banka & Kasa' : 'Bankaya Öde'}
+                </strong>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  {isBanker ? 'Maaş ver / tahsil et' : 'Vergi, ceza veya kodes'}
+                </span>
+              </div>
             </div>
+          </div>
 
-            <div className="quick-action-tile" onClick={() => setShowBankModal(true)}>
-              <div className="tile-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: 'var(--emerald-primary)' }}>
-                <Landmark size={18} />
-              </div>
-              <span className="tile-label">Banka İşlemi</span>
-            </div>
+          {/* İkincil Araçlar (Hafif ve Sade Pill Butonlar) */}
+          <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{
+                flex: 1,
+                fontSize: '11px',
+                padding: '6px 10px',
+                minHeight: '32px',
+                justifyContent: 'center',
+                gap: '6px',
+                color: 'var(--text-muted)',
+              }}
+              onClick={() => setShowDebtModal(true)}
+            >
+              <HandCoins size={13} color="var(--blue-primary)" />
+              Borçlar
+              {myDebtsOwed.length > 0 && (
+                <span className="badge badge-rose" style={{ fontSize: '9px', padding: '0 5px' }}>
+                  {myDebtsOwed.length}
+                </span>
+              )}
+            </button>
 
-            <div className="quick-action-tile" onClick={() => setView('properties')}>
-              <div className="tile-icon" style={{ background: 'rgba(148, 163, 184, 0.1)', color: 'var(--text-main)' }}>
-                <Building size={18} />
-              </div>
-              <span className="tile-label">Mülkler</span>
-            </div>
-
-            <div className="quick-action-tile" onClick={() => setView('history')}>
-              <div className="tile-icon" style={{ background: 'rgba(148, 163, 184, 0.1)', color: 'var(--text-main)' }}>
-                <History size={18} />
-              </div>
-              <span className="tile-label">Geçmiş</span>
-            </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{
+                flex: 1,
+                fontSize: '11px',
+                padding: '6px 10px',
+                minHeight: '32px',
+                justifyContent: 'center',
+                gap: '6px',
+                color: 'var(--text-muted)',
+              }}
+              onClick={() => setView('history')}
+            >
+              <History size={13} color="var(--text-dim)" />
+              İşlem Geçmişi
+            </button>
           </div>
         </div>
 
         {/* OYUNCU KARTLARI LİSTESİ */}
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <h3 style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Oyuncular ({players.length})</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <h3 style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Masa Oyuncuları ({players.length})</h3>
             <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Detay için dokunun</span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {players.map((p) => {
               const pProps = properties.filter((pr) => pr.owner_id === p.id);
               const pHouses = pProps.reduce((sum, pr) => sum + pr.house_count, 0);
@@ -595,7 +772,7 @@ export const App: React.FC = () => {
                   key={p.id}
                   className="card card-interactive"
                   style={{
-                    padding: '12px 14px',
+                    padding: '10px 12px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -604,11 +781,11 @@ export const App: React.FC = () => {
                   }}
                   onClick={() => setSelectedPlayerForDetail(p)}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div
                       style={{
-                        width: '40px',
-                        height: '40px',
+                        width: '36px',
+                        height: '36px',
                         borderRadius: '50%',
                         background: isCurrent ? 'var(--emerald-primary)' : 'rgba(255, 255, 255, 0.08)',
                         color: isCurrent ? '#03140a' : 'var(--text-main)',
@@ -616,7 +793,7 @@ export const App: React.FC = () => {
                         alignItems: 'center',
                         justifyContent: 'center',
                         fontWeight: 800,
-                        fontSize: '16px',
+                        fontSize: '15px',
                         flexShrink: 0,
                       }}
                     >
@@ -624,22 +801,22 @@ export const App: React.FC = () => {
                     </div>
 
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <strong style={{ fontSize: '15px' }}>{p.name}</strong>
-                        {isCurrent && <span className="badge badge-emerald">Siz</span>}
-                        {p.is_banker && <span className="badge badge-slate">Bankacı</span>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <strong style={{ fontSize: '14px' }}>{p.name}</strong>
+                        {isCurrent && <span className="badge badge-emerald" style={{ fontSize: '9px', padding: '1px 5px' }}>Siz</span>}
+                        {p.is_banker && <span className="badge badge-slate" style={{ fontSize: '9px', padding: '1px 5px' }}>Bankacı</span>}
                       </div>
 
                       {/* Mülk Renk Noktaları ve Varlık Özeti */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px', flexWrap: 'wrap' }}>
                         {uniqueColors.length > 0 && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', marginRight: '2px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginRight: '2px' }}>
                             {uniqueColors.map((col, idx) => (
                               <span
                                 key={idx}
                                 style={{
-                                  width: '8px',
-                                  height: '8px',
+                                  width: '7px',
+                                  height: '7px',
                                   borderRadius: '50%',
                                   backgroundColor: col,
                                   display: 'inline-block',
@@ -649,14 +826,14 @@ export const App: React.FC = () => {
                           </div>
                         )}
 
-                        <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{pProps.length} mülk</span>
+                        <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{pProps.length} tapu</span>
                         {(pHouses > 0 || pHotels > 0) && (
                           <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
                             • {pHouses > 0 ? `${pHouses} Ev` : ''} {pHotels > 0 ? `${pHotels} Otel` : ''}
                           </span>
                         )}
                         {pDebts.length > 0 && (
-                          <span className="badge badge-rose" style={{ fontSize: '10px', padding: '1px 6px' }}>
+                          <span className="badge badge-rose" style={{ fontSize: '9px', padding: '0 5px' }}>
                             Borçlu
                           </span>
                         )}
@@ -664,29 +841,57 @@ export const App: React.FC = () => {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ textAlign: 'right' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ textAlign: 'right', marginRight: '2px' }}>
                       <strong
                         className="num-font"
-                        style={{ fontSize: '16px', color: 'var(--emerald-primary)', display: 'block' }}
+                        style={{ fontSize: '15px', color: 'var(--emerald-primary)', display: 'block' }}
                       >
                         {formatMoney(p.balance)}
                       </strong>
                     </div>
 
-                    {/* Başka oyuncu ise: 1-Tap Hızlı Gönder Butonu */}
+                    {/* Masa Bankacısı ise: Tek Dokunuşla +200 ₺ Maaş Verme Butonu */}
+                    {currentPlayer?.is_banker && (
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{
+                          padding: '4px 8px',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          minHeight: '28px',
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          color: 'var(--emerald-primary)',
+                          border: '1px solid rgba(16, 185, 129, 0.35)',
+                          borderRadius: '8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleBankerGiveSalary(p.id, p.name);
+                        }}
+                        title={`${p.name} başlangıçtan geçtiğinde +200 ₺ maaş ver`}
+                      >
+                        <Zap size={12} /> +200 ₺
+                      </button>
+                    )}
+
+                    {/* Başka oyuncu ise: Hızlı Para Gönder Butonu */}
                     {!isCurrent && (
                       <button
                         type="button"
                         className="btn btn-secondary"
                         style={{
-                          padding: '5px 10px',
+                          padding: '4px 8px',
                           fontSize: '11px',
                           fontWeight: 800,
-                          minHeight: '30px',
+                          minHeight: '28px',
                           color: 'var(--emerald-primary)',
                           borderColor: 'rgba(16, 185, 129, 0.4)',
-                          gap: '4px',
+                          gap: '3px',
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -699,7 +904,7 @@ export const App: React.FC = () => {
                       </button>
                     )}
 
-                    <ChevronRight size={16} color="var(--text-dim)" />
+                    <ChevronRight size={14} color="var(--text-dim)" />
                   </div>
                 </div>
               );

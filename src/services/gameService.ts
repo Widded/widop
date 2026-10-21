@@ -678,6 +678,11 @@ export class GameService {
     const state = getLocalRoomState(roomId);
     if (!state) throw new Error('Oda bulunamadı');
 
+    const caller = state.players.find((p) => p.session_token === sessionToken);
+    if (direction === 'bank_to_player' && caller && !caller.is_banker) {
+      throw new Error('Para ekleme işlemleri yalnızca Masa Bankacısı tarafından yapılabilir!');
+    }
+
     const player = state.players.find((p) => p.id === playerId);
     if (!player) throw new Error('Oyuncu bulunamadı');
 

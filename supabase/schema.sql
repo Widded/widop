@@ -399,6 +399,14 @@ BEGIN
   END IF;
 
   IF p_direction = 'bank_to_player' THEN
+    -- Para ekleme işlemi yalnızca Masa Bankacısı tarafından yapılabilir
+    IF NOT EXISTS (
+      SELECT 1 FROM players 
+      WHERE room_id = p_room_id AND session_token = p_session_token AND is_banker = true
+    ) THEN
+      RETURN jsonb_build_object('success', false, 'error', 'Para ekleme işlemi yalnızca Masa Bankacısı tarafından yapılabilir');
+    END IF;
+
     UPDATE players SET balance = balance + p_amount WHERE id = v_player.id;
     v_type := 'bank_deposit';
     
